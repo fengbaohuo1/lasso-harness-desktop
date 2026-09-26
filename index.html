@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JNF Desktop</title>
+    <script>
+      // 启动失败浮层：React 挂载前的 JS 异常不静默，直接铺满窗口展示堆栈，方便定位。
+      function jnfShowFatal(kind, detail) {
+        if (!detail) return;
+        var overlay = document.createElement("div");
+        overlay.style.cssText =
+          "position:fixed;inset:0;z-index:99999;padding:24px;background:#fff;color:#dc2626;" +
+          "font:14px/1.5 ui-monospace,SFMono-Regular,monospace;white-space:pre-wrap;overflow:auto";
+        overlay.textContent = "桌面界面启动失败（" + kind + "）：\n" + detail;
+        document.body && document.body.append(overlay);
+      }
+      window.addEventListener(
+        "error",
+        function (event) {
+          jnfShowFatal("error", (event.error && event.error.stack) || event.message || event.filename);
+        },
+        true
+      );
+      window.addEventListener("unhandledrejection", function (event) {
+        jnfShowFatal("unhandledrejection", (event.reason && event.reason.stack) || String(event.reason));
+      });
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+[package]
+name = "jnf-desktop"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+description = "jnf-harness 桌面壳：Tauri 2 托管内嵌 Spring Boot 智能体服务"
+
+[lib]
+name = "jnf_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-http = "2"
+# API Key 生成用 OS 随机源（/dev/urandom、BCryptGenRandom），拒绝弱随机
+getrandom = "0.3"

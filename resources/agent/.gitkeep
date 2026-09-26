@@ -1,0 +1,3 @@
+# 占位文件：本目录存放内嵌后端 JAR 与（可选）内置 Java 17 Runtime。
+# jnf-harness-app.jar 由 npm run agent:copy 生成；runtime/ 由 npm run agent:runtime 生成。
+# 两者均不入 Git（见 .gitignore）。

@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "JNF Desktop 主窗口最小权限面：窗口拖拽 + 仅 127.0.0.1 的 HTTP 兜底通道",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    {
+      "identifier": "http:default",
+      "allow": [{ "url": "http://127.0.0.1:*/*" }]
+    }
+  ]
+}
