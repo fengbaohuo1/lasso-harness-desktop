@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import Composer from './components/Composer';
 import ConversationView from './components/ConversationView';
+import SettingsDialog from './components/SettingsDialog';
 import {
   AgentApiError,
   AgentRunCancelledError,
@@ -57,6 +58,7 @@ export default function App(): ReactElement {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   const bootStartedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -255,8 +257,15 @@ export default function App(): ReactElement {
               {typeof agentStatus.pid === 'number' ? ` · pid ${agentStatus.pid}` : ''}
             </span>
           ) : null}
+          {bootReady ? (
+            <button type="button" className="btn btn--small" onClick={() => setShowSettings(true)}>
+              设置
+            </button>
+          ) : null}
         </div>
       </header>
+
+      {showSettings && bootReady ? <SettingsDialog onClose={() => setShowSettings(false)} /> : null}
 
       {!bootReady ? (
         <section className="boot-panel">

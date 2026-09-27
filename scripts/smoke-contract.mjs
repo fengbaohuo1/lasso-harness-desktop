@@ -73,6 +73,72 @@ const replayJson = await replay.json();
 const replayText = JSON.stringify(replayJson.data || []);
 record('历史回放含对话', replay.status === 200 && replayText.includes('联调测试'));
 
+// 6. 模型渠道：列表含 M1 契约字段（hasApiKey 只回布尔）
+const modelsList = await fetch(base + '/api/harness/settings/models', { headers });
+const modelsJson = await modelsList.json();
+const channels = modelsJson.data || [];
+record('模型渠道列表 + hasApiKey 契约',
+  modelsList.status === 200 && Array.isArray(channels)
+    && channels.every((c) => typeof c.hasApiKey === 'boolean' && typeof c.apiKeyRef === 'string'));
+
+// 7. 测试连接（M3：对 fake-llm /v1/models 探测）
+const testRes = await fetch(base + '/api/harness/settings/models/test', {
+  method: 'POST', headers,
+  body: JSON.stringify({ baseUrl: 'http://127.0.0.1:8777/v1', protocol: 'openai' }),
+});
+const testJson = await testRes.json();
+record('测试连接（fake-llm 上游）', testJson.data && testJson.data.ok === true,
+  testJson.data ? testJson.data.message : '');
+
+// 8. 渠道保存→启用→恢复→删除 回环（保留现场：恢复原生效渠道）
+const prevActive = (channels.find((c) => c.active) || {}).channelCode || 'default';
+const saveRes = await fetch(base + '/api/harness/settings/models', {
+  method: 'POST', headers,
+  body: JSON.stringify({
+    channelCode: 'smoke-ch', displayName: '冒烟渠道', providerCode: 'custom',
+    modelCode: 'smoke-model', baseUrl: 'http://127.0.0.1:8777/v1',
+    protocol: 'openai', enabled: true, apiKey: 'sk-smoke-secret',
+  }),
+});
+const saveJson = await saveRes.json();
+const keyHidden = saveJson.data && !JSON.stringify(saveJson.data).includes('sk-smoke-secret')
+  && saveJson.data.hasApiKey === true;
+await fetch(base + '/api/harness/settings/models/active', {
+  method: 'POST', headers, body: JSON.stringify({ channelCode: 'smoke-ch' }),
+});
+await fetch(base + '/api/harness/settings/models/active', {
+  method: 'POST', headers, body: JSON.stringify({ channelCode: prevActive }),
+});
+const delRes = await fetch(base + '/api/harness/settings/models/smoke-ch', {
+  method: 'DELETE', headers,
+});
+record('渠道保存/启用/删除回环 + 密钥不回显', saveRes.status === 200 && keyHidden
+  && delRes.status === 200);
+
+// 9. 厂商预设（M5：11 项）
+const presetsRes = await fetch(base + '/api/harness/channels/presets', { headers });
+const presetsJson = await presetsRes.json();
+record('厂商预设 ≥ 11', presetsRes.status === 200 && (presetsJson.data || []).length >= 11,
+  '数量: ' + ((presetsJson.data || []).length));
+
+// 10. 插件目录发现（P2）
+const catalogRes = await fetch(base + '/api/harness/plugins/catalog', { headers });
+const catalogJson = await catalogRes.json();
+record('插件目录 catalog', catalogRes.status === 200 && Array.isArray(catalogJson.data));
+
+// 11. 插件配置 KV 写读删（P1：持久化）
+await fetch(base + '/api/harness/plugins/smoke-plugin/config', {
+  method: 'PUT', headers, body: JSON.stringify({ region: 'cn', level: 'debug' }),
+});
+const cfgRes = await fetch(base + '/api/harness/plugins/smoke-plugin/config', { headers });
+const cfgJson = await cfgRes.json();
+await fetch(base + '/api/harness/plugins/smoke-plugin/config/level', { method: 'DELETE', headers });
+const cfgRes2 = await fetch(base + '/api/harness/plugins/smoke-plugin/config', { headers });
+const cfgJson2 = await cfgRes2.json();
+record('插件配置 KV 写读删',
+  cfgJson.data && cfgJson.data.region === 'cn' && cfgJson.data.level === 'debug'
+  && cfgJson2.data && cfgJson2.data.level === undefined && cfgJson2.data.region === 'cn');
+
 const failed = checks.filter((c) => !c.ok);
 console.log(failed.length === 0 ? '契约冒烟全部通过' : ('失败 ' + failed.length + ' 项'));
 process.exit(failed.length === 0 ? 0 : 1);

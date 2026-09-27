@@ -173,6 +173,18 @@ async function requestEnvelope<T>(path: string, init?: RequestInit): Promise<T> 
   return envelope.data;
 }
 
+/** 通用 REST 调用（信封解包 + 双通道传输；设置页等非对话流量统一走这里）。 */
+export function apiRequest<T>(
+  path: string,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
+  body?: unknown,
+): Promise<T> {
+  return requestEnvelope<T>(path, {
+    method,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
 /** POST /api/agent/message（非流式）。 */
 export function sendAgentMessage(req: AgentMessageRequest): Promise<AgentRunResult> {
   return requestEnvelope<AgentRunResult>('/api/agent/message', {

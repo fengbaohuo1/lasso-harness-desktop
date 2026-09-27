@@ -462,6 +462,189 @@ body {
   background: #c93b34;
 }
 
+.btn--small {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  color: inherit;
+}
+
+.btn--small:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* ----------------------------- 设置（M6/P4） ----------------------------- */
+
+.banner--info {
+  background: rgba(64, 158, 255, 0.12);
+  color: #1b64b8;
+  border-color: rgba(64, 158, 255, 0.35);
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.badge--active {
+  background: rgba(52, 168, 83, 0.18);
+  color: #1d7a3a;
+}
+
+.badge--muted {
+  background: rgba(0, 0, 0, 0.06);
+  color: #777;
+}
+
+.badge--danger {
+  background: rgba(211, 60, 50, 0.15);
+  color: #b23127;
+}
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.settings-dialog {
+  width: min(920px, 92vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel, #fff);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.settings-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.settings-dialog__body {
+  padding: 12px 16px 20px;
+  overflow: auto;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.settings-tab {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-tab--active {
+  background: rgba(64, 158, 255, 0.15);
+  color: #1b64b8;
+  font-weight: 600;
+}
+
+.settings-panel h3 {
+  margin: 14px 0 8px;
+  font-size: 14px;
+}
+
+.settings-toolbar {
+  margin-bottom: 10px;
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.settings-table th,
+.settings-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.settings-table__path {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-table__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.settings-table input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.settings-form {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.settings-form__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+
+.settings-form__row > span {
+  width: 84px;
+  flex: none;
+  color: #666;
+}
+
+.settings-form__row input[type='text'],
+.settings-form__row input:not([type]),
+.settings-form__row input[type='password'],
+.settings-form__row select {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.settings-form__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 /* ----------------------------- 动画 ----------------------------- */
 
 @keyframes spin {
