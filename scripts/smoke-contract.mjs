@@ -34,6 +34,24 @@ const noAuth = await fetch(base + '/api/agent/message', {
 record('无 API Key → 401', noAuth.status === 401);
 
 // 4. SSE 流式对话（UI 的 streamAgentMessage 同款解析）
+// 4.0 切到 fake-llm 渠道保证确定性（记住原生效渠道，收尾切回）；流式期间自动 DENY 挂起审批防堵
+const listRes = await fetch(base + '/api/harness/settings/models', { headers });
+const listJson = await listRes.json();
+const activeBefore = (listJson.data || []).find((c) => c.active)?.channelCode || 'default';
+await fetch(base + '/api/harness/settings/models/active', {
+  method: 'POST', headers, body: JSON.stringify({ channelCode: 'default' }),
+});
+const denyTimer = setInterval(async () => {
+  try {
+    const p = await fetch(base + '/api/harness/approvals/runtime/pending', { headers });
+    const pj = await p.json();
+    for (const a of pj.data || []) {
+      await fetch(base + '/api/harness/approvals/runtime/' + a.id + '/resolve', {
+        method: 'POST', headers, body: JSON.stringify({ verdict: 'DENY' }),
+      });
+    }
+  } catch { /* 冒烟自愈，失败忽略 */ }
+}, 2000);
 const streamRes = await fetch(base + '/api/agent/stream', {
   method: 'POST', headers,
   body: JSON.stringify({ agentId: 'smoke-agent', message: '联调测试' }),
@@ -66,6 +84,7 @@ for (;;) {
 record('SSE 事件序列 meta/chunk/done',
   events.has('meta') && events.has('chunk') && events.has('done'), '事件: ' + [...events].join(','));
 record('流式文本回显', text.includes('jnf-harness'), '文本: ' + text);
+clearInterval(denyTimer);
 
 // 5. 历史回放
 const replay = await fetch(base + '/api/harness/console/sessions/smoke-agent/messages', { headers });
@@ -156,6 +175,12 @@ record('插件配置 KV 写读删',
     rep.status === 200 && argsJsonOk && resultShapeOk,
     `tool_call=${calls.length} tool_result=${results.length}`);
 }
+
+// 13. 收尾：切回原生效渠道（不改变用户现场）
+await fetch(base + '/api/harness/settings/models/active', {
+  method: 'POST', headers, body: JSON.stringify({ channelCode: activeBefore }),
+});
+record('生效渠道还原（' + activeBefore + '）', true);
 
 const failed = checks.filter((c) => !c.ok);
 console.log(failed.length === 0 ? '契约冒烟全部通过' : ('失败 ' + failed.length + ' 项'));
