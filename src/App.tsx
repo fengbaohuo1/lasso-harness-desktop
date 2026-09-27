@@ -1,8 +1,10 @@
 /**
- * jnf-desktop 主容器：
- *  - 启动链：invoke agent_status -> 未运行则 start_agent -> 轮询 /actuator/health 或 status 直到就绪
- *  - 对话视图：消息流 + 输入框 + 发送 + 停止生成
- * 所有业务请求统一走 lib/agent-client，组件内不直接 fetch / invoke。
+ * jnf-desktop 主容器（M7）：
+ *  - 启动链：invoke agent_status -> 未运行则 start_agent -> 轮询 health/status 直到就绪
+ *  - 布局：顶栏（状态 + 当前模型 + 设置）| 左侧会话栏 | 主区（对话 + 输入）
+ *  - 对话：消息流 + 输入框 + 发送 + 停止生成；流式期间轮询运行期审批（挂起-裁决）
+ * 所有业务请求统一走 lib/agent-client 与 lib/console-client、lib/settings-client，
+ * 组件内不直接 fetch / invoke。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -10,6 +12,7 @@ import type { ReactElement } from 'react';
 import Composer from './components/Composer';
 import ConversationView from './components/ConversationView';
 import SettingsDialog from './components/SettingsDialog';
+import Sidebar from './components/Sidebar';
 import {
   AgentApiError,
   AgentRunCancelledError,
@@ -20,16 +23,27 @@ import {
   streamAgentMessage,
   waitForAgentReady,
 } from './lib/agent-client';
+import {
+  fetchPendingApprovals,
+  fetchSessionMessages,
+  fetchSessions,
+  resolveApproval,
+  toChatMessages,
+} from './lib/console-client';
+import { listModelChannels } from './lib/settings-client';
 import type {
   AgentStatus,
+  ApprovalVerdict,
   BootState,
   ChatMessage,
+  RuntimeApprovalDto,
+  SessionSummary,
   ToolCardState,
   ToolCardStatus,
 } from './types';
 
-/** 本桌面壳使用的固定 agentId。 */
-const AGENT_ID = 'main';
+/** 默认会话（与后端 agentId 语义一致）。 */
+const DEFAULT_AGENT_ID = 'main';
 
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -59,9 +73,16 @@ export default function App(): ReactElement {
   const [streaming, setStreaming] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [agentId, setAgentId] = useState<string>(DEFAULT_AGENT_ID);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [approvals, setApprovals] = useState<RuntimeApprovalDto[]>([]);
+  const [activeModel, setActiveModel] = useState<string | null>(null);
+  const [promptHistory, setPromptHistory] = useState<string[]>([]);
 
   const bootStartedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const agentIdRef = useRef(agentId);
+  agentIdRef.current = agentId;
 
   /* ----------------------------- 启动链 ----------------------------- */
 
@@ -74,7 +95,7 @@ export default function App(): ReactElement {
         setBoot({ phase: 'starting' });
         await startAgentProcess();
       }
-      // 轮询 agent_status 与 /actuator/health 直到就绪（内部会注入 baseUrl + apiKey）
+      // 轮询 agent_status 和 /actuator/health 直到就绪（内部会注入 baseUrl + apiKey）
       const ready = await waitForAgentReady();
       setAgentStatus(ready);
       setBoot({ phase: 'ready' });
@@ -91,6 +112,105 @@ export default function App(): ReactElement {
     void runBootChain();
   }, [runBootChain]);
 
+  /* ----------------------------- 侧栏/模型徽标数据 ----------------------------- */
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      const list = await fetchSessions();
+      setSessions(list);
+    } catch {
+      // 侧栏数据失败不打扰主流程
+    }
+  }, []);
+
+  const refreshModel = useCallback(async () => {
+    try {
+      const channels = await listModelChannels();
+      const active = channels.find((c) => c.active);
+      setActiveModel(active ? active.modelCode : null);
+    } catch {
+      setActiveModel(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (boot.phase !== 'ready') {
+      return;
+    }
+    void refreshSessions();
+    void refreshModel();
+  }, [boot.phase, refreshSessions, refreshModel]);
+
+  /* ----------------------------- 运行期审批轮询（挂起-裁决） ----------------------------- */
+
+  useEffect(() => {
+    if (boot.phase !== 'ready') {
+      return;
+    }
+    let stopped = false;
+    const poll = async (): Promise<void> => {
+      try {
+        const pending = await fetchPendingApprovals();
+        if (!stopped) {
+          setApprovals(pending);
+        }
+      } catch {
+        // 轮询失败静默（下一轮重试）
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 2500);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [boot.phase]);
+
+  const handleResolveApproval = useCallback((approvalId: string, verdict: ApprovalVerdict) => {
+    void resolveApproval(approvalId, verdict)
+      .catch((err) => setBanner(describeError(err)))
+      .finally(() => {
+        void fetchPendingApprovals()
+          .then(setApprovals)
+          .catch(() => undefined);
+      });
+  }, []);
+
+  /* ----------------------------- 会话切换 ----------------------------- */
+
+  const loadSession = useCallback(async (id: string) => {
+    try {
+      const history = await fetchSessionMessages(id);
+      setMessages(toChatMessages(history, id));
+    } catch (err) {
+      setBanner(describeError(err));
+    }
+  }, []);
+
+  const handleSelectSession = useCallback(
+    (id: string) => {
+      if (id === agentId) {
+        return;
+      }
+      abortRef.current?.abort();
+      void cancelAgentRun(agentId).catch(() => undefined);
+      setStreaming(false);
+      setAgentId(id);
+      setMessages([]);
+      void loadSession(id);
+    },
+    [agentId, loadSession],
+  );
+
+  const handleNewSession = useCallback(() => {
+    abortRef.current?.abort();
+    void cancelAgentRun(agentId).catch(() => undefined);
+    setStreaming(false);
+    const id = `s-${Date.now().toString(36)}`;
+    setAgentId(id);
+    setMessages([]);
+  }, [agentId]);
+
   /* ----------------------------- 发送 / 停止 ----------------------------- */
 
   const handleSend = useCallback(
@@ -101,12 +221,14 @@ export default function App(): ReactElement {
       }
 
       setBanner(null);
+      setPromptHistory((prev) => [...prev.filter((item) => item !== text), text].slice(-50));
       const userMessage: ChatMessage = {
         id: uid(),
         role: 'user',
         text,
         toolCards: [],
         status: 'done',
+        createdAt: Date.now(),
       };
       const assistantId = uid();
       const assistantMessage: ChatMessage = {
@@ -115,6 +237,7 @@ export default function App(): ReactElement {
         text: '',
         toolCards: [],
         status: 'streaming',
+        createdAt: Date.now(),
       };
       setMessages((prev) => [...prev, userMessage, assistantMessage]);
       setStreaming(true);
@@ -130,7 +253,7 @@ export default function App(): ReactElement {
 
       try {
         await streamAgentMessage(
-          { agentId: AGENT_ID, message: text },
+          { agentId: agentIdRef.current, message: text },
           {
             onChunk: ({ content }) => {
               patchAssistant((m) => ({ text: m.text + (content ?? '') }));
@@ -205,7 +328,7 @@ export default function App(): ReactElement {
           },
           { signal: controller.signal },
         );
-        // 流正常结束但没收到 done：兜底收敛状态
+        // 流正常结束但没收到 done：兜底收束状态
         patchAssistant((m) => (m.status === 'streaming' ? { status: 'done' } : {}));
       } catch (err) {
         if (err instanceof AgentRunCancelledError) {
@@ -218,15 +341,19 @@ export default function App(): ReactElement {
       } finally {
         setStreaming(false);
         abortRef.current = null;
+        void refreshSessions();
+        void fetchPendingApprovals()
+          .then(setApprovals)
+          .catch(() => undefined);
       }
     },
-    [streaming],
+    [streaming, refreshSessions],
   );
 
   const handleStop = useCallback(() => {
-    // 中断本地 fetch 流 + 通知后端取消本次运行（best-effort）
+    // 中断本地 fetch 流 + 通知后端取消本轮运行（best-effort）
     abortRef.current?.abort();
-    void cancelAgentRun(AGENT_ID).catch(() => undefined);
+    void cancelAgentRun(agentIdRef.current).catch(() => undefined);
   }, []);
 
   /* ----------------------------- 渲染 ----------------------------- */
@@ -257,6 +384,11 @@ export default function App(): ReactElement {
               {typeof agentStatus.pid === 'number' ? ` · pid ${agentStatus.pid}` : ''}
             </span>
           ) : null}
+          {bootReady && activeModel ? (
+            <span className="model-badge" title="当前生效模型（设置中可切换）">
+              {activeModel}
+            </span>
+          ) : null}
           {bootReady ? (
             <button type="button" className="btn btn--small" onClick={() => setShowSettings(true)}>
               设置
@@ -265,7 +397,15 @@ export default function App(): ReactElement {
         </div>
       </header>
 
-      {showSettings && bootReady ? <SettingsDialog onClose={() => setShowSettings(false)} /> : null}
+      {showSettings && bootReady ? (
+        <SettingsDialog
+          onClose={() => {
+            setShowSettings(false);
+            void refreshModel();
+            void refreshSessions();
+          }}
+        />
+      ) : null}
 
       {!bootReady ? (
         <section className="boot-panel">
@@ -282,23 +422,37 @@ export default function App(): ReactElement {
           ) : null}
         </section>
       ) : (
-        <main className="app-main">
-          {banner ? (
-            <div className="banner banner--error" role="alert">
-              <span>{banner}</span>
-              <button type="button" className="banner-close" onClick={() => setBanner(null)}>
-                ×
-              </button>
-            </div>
-          ) : null}
-          <ConversationView messages={messages} streaming={streaming} />
-          <Composer
-            disabled={!bootReady}
-            streaming={streaming}
-            onSend={handleSend}
-            onStop={handleStop}
+        <div className="app-body">
+          <Sidebar
+            sessions={sessions}
+            activeId={agentId}
+            onSelect={handleSelectSession}
+            onNew={handleNewSession}
           />
-        </main>
+          <main className="app-main">
+            {banner ? (
+              <div className="banner banner--error" role="alert">
+                <span>{banner}</span>
+                <button type="button" className="banner-close" onClick={() => setBanner(null)}>
+                  ×
+                </button>
+              </div>
+            ) : null}
+            <ConversationView
+              messages={messages}
+              streaming={streaming}
+              approvals={approvals}
+              onResolveApproval={handleResolveApproval}
+            />
+            <Composer
+              disabled={!bootReady}
+              streaming={streaming}
+              history={promptHistory}
+              onSend={handleSend}
+              onStop={handleStop}
+            />
+          </main>
+        </div>
       )}
     </div>
   );

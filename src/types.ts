@@ -169,6 +169,8 @@ export interface ChatMessage {
   status: MessageStatus;
   turn?: number;
   error?: string;
+  /** 创建时间（毫秒时间戳，M7 时间戳展示）。 */
+  createdAt?: number;
 }
 
 /** 启动链阶段。 */
@@ -179,3 +181,39 @@ export interface BootState {
   phase: BootPhase;
   error?: string;
 }
+
+/* ----------------------------- M7：会话/审批/设置 DTO ----------------------------- */
+
+/** GET /api/harness/console/sessions 条目。 */
+export interface SessionSummary {
+  sessionId: string;
+  events: number;
+}
+
+/** 会话回放中的工具条目（tool_call / tool_result）。 */
+export interface ConsoleToolBlock {
+  type: 'tool_call' | 'tool_result' | string;
+  callId: string;
+  name: string;
+  arguments?: string;
+  content?: unknown;
+  error?: unknown;
+}
+
+/** GET /api/harness/console/sessions/{id}/messages 条目。 */
+export interface ConsoleMessage {
+  role: 'USER' | 'ASSISTANT' | 'SYSTEM' | 'TOOL' | string;
+  text: string;
+  blocks: ConsoleToolBlock[];
+}
+
+/** GET /api/harness/approvals/runtime/pending 条目（挂起-裁决）。 */
+export interface RuntimeApprovalDto {
+  id: string;
+  toolName: string;
+  argsJson: string;
+  createdAt: string;
+}
+
+/** 审批裁决。 */
+export type ApprovalVerdict = 'ALLOW_ONCE' | 'ALLOW_SESSION' | 'DENY';

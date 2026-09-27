@@ -1,15 +1,19 @@
 /**
- * 对话视图：消息气泡 + 流式渲染 + 工具卡片。
- * 工具卡片由 step_break 开始、tool_result 结束，展示工具名 / 参数 / 结果 / 成败色。
+ * 对话视图（M7.3）：消息气泡 + 流式渲染 + 工具卡片 + 审批插槽。
+ * 助手消息走 markdown-lite（代码块带复制）；自动滚动 +「回到底部」；消息复制与时间戳。
  */
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { ChatMessage, ToolCardState } from '../types';
+import MarkdownLite from '../lib/markdown-lite';
+import ApprovalCard from './ApprovalCard';
+import type { ApprovalVerdict, ChatMessage, RuntimeApprovalDto, ToolCardState } from '../types';
 
 export interface ConversationViewProps {
   messages: ChatMessage[];
   streaming: boolean;
+  approvals?: RuntimeApprovalDto[];
+  onResolveApproval?: (approvalId: string, verdict: ApprovalVerdict) => void;
 }
 
 /** 把任意值渲染成可读文本（JSON 优先）。 */
@@ -27,6 +31,39 @@ function formatValue(value: unknown): string {
   }
 }
 
+function timeLabel(ts?: number): string {
+  if (!ts) {
+    return '';
+  }
+  const d = new Date(ts);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function CopyTextButton({ text }: { text: string }): ReactElement | null {
+  const [copied, setCopied] = useState(false);
+  if (!text) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      className="bubble__copy"
+      onClick={() => {
+        navigator.clipboard?.writeText(text).then(
+          () => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          },
+          () => undefined,
+        );
+      }}
+    >
+      {copied ? '已复制' : '复制'}
+    </button>
+  );
+}
+
 function ToolCard({ card }: { card: ToolCardState }): ReactElement {
   const argsText = formatValue(card.args);
   const resultText = card.error ? card.error : formatValue(card.result);
@@ -40,7 +77,7 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
     <div className={`tool-card tool-card--${card.status}`}>
       <div className="tool-card__head">
         <span className={`tool-card__icon tool-card__icon--${card.status}`} aria-hidden="true">
-          {card.status === 'running' ? '⟳' : card.status === 'success' ? '✓' : '✕'}
+          {card.status === 'running' ? '⚙' : card.status === 'success' ? '✓' : '✕'}
         </span>
         <span className="tool-card__name">{card.toolName}</span>
         <span className={`tool-card__status tool-card__status--${card.status}`}>
@@ -77,7 +114,10 @@ function MessageBubble({ message }: { message: ChatMessage }): ReactElement {
         ) : null}
 
         {message.text ? (
-          <div className="bubble__text">{message.text}</div>
+          <div className="bubble__text">
+            {isUser ? message.text : <MarkdownLite text={message.text} />}
+            {message.status === 'streaming' ? <span className="cursor" aria-hidden="true" /> : null}
+          </div>
         ) : null}
 
         {message.status === 'streaming' && message.text === '' && message.toolCards.length === 0 ? (
@@ -91,9 +131,13 @@ function MessageBubble({ message }: { message: ChatMessage }): ReactElement {
         {message.status === 'error' && message.error ? (
           <div className="bubble__error">{message.error}</div>
         ) : null}
-        {message.status === 'cancelled' ? (
-          <div className="bubble__meta">已停止生成</div>
-        ) : null}
+
+        <div className="bubble__meta">
+          {timeLabel(message.createdAt)}
+          {message.status === 'cancelled' ? ' · 已停止' : ''}
+          {message.status === 'error' ? ' · 出错' : ''}
+          {message.text ? <CopyTextButton text={message.text} /> : null}
+        </div>
       </div>
     </div>
   );
@@ -102,28 +146,56 @@ function MessageBubble({ message }: { message: ChatMessage }): ReactElement {
 export default function ConversationView({
   messages,
   streaming,
+  approvals = [],
+  onResolveApproval,
 }: ConversationViewProps): ReactElement {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [nearBottom, setNearBottom] = useState(true);
 
-  useEffect(() => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth'): void => {
     const el = scrollRef.current;
     if (el) {
-      el.scrollTop = el.scrollHeight;
+      el.scrollTo({ top: el.scrollHeight, behavior });
     }
-  }, [messages, streaming]);
+  }, []);
+
+  useEffect(() => {
+    if (nearBottom) {
+      scrollToBottom('auto');
+    }
+  }, [messages, approvals, nearBottom, scrollToBottom]);
+
+  const handleScroll = (): void => {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    setNearBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
+  };
 
   return (
-    <div className="conversation" ref={scrollRef}>
-      {messages.length === 0 ? (
-        <div className="conversation__empty">
-          <p>开始和你的 Agent 对话吧。</p>
-          <p className="conversation__hint">
-            消息经 /api/agent/stream 流式返回；工具调用会以卡片形式展示。
-          </p>
-        </div>
-      ) : (
-        messages.map((m) => <MessageBubble key={m.id} message={m} />)
-      )}
+    <div className="conversation-wrap">
+      {streaming ? <div className="streaming-bar" aria-hidden="true" /> : null}
+      <div className="conversation" ref={scrollRef} onScroll={handleScroll}>
+        {messages.length === 0 ? (
+          <div className="conversation__empty">
+            <p className="conversation__hint">
+              我是 jnf-harness 智能体。直接输入消息开始对话；我会按需调用工具
+              （文件/搜索/命令等），涉及敏感操作时会在这里向你申请审批。
+            </p>
+          </div>
+        ) : (
+          messages.map((message) => <MessageBubble key={message.id} message={message} />)
+        )}
+        {approvals.length > 0 && onResolveApproval ? (
+          <ApprovalCard approvals={approvals} onResolve={onResolveApproval} />
+        ) : null}
+      </div>
+      {!nearBottom ? (
+        <button type="button" className="scroll-bottom" onClick={() => scrollToBottom()}>
+          ↓ 回到底部
+        </button>
+      ) : null}
     </div>
   );
 }
