@@ -10,6 +10,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import {
   API_SUCCESS_CODE,
   type AgentMessageRequest,
@@ -119,11 +120,32 @@ export function stopAgentProcess(): Promise<unknown> {
 
 /* ----------------------------- REST ----------------------------- */
 
+/** 最近一次网络传输错误（供启动链超时信息带出真实原因）。 */
+let lastTransportError = '';
+
+export function getLastTransportError(): string {
+  return lastTransportError;
+}
+
+/**
+ * 双通道传输：原生 window.fetch 优先，失败自动回退 @tauri-apps/plugin-http（IPC 通道，
+ * 完全绕开 WebView 的 CORS/PNA/代理网络栈——参照实现实测 plugin-http IPC 更可靠）。
+ */
+async function httpFetch(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    lastTransportError = '';
+    return await fetch(url, init);
+  } catch (err) {
+    lastTransportError = `window.fetch 失败（${err instanceof Error ? err.message : String(err)}），回退 plugin-http`;
+    return await tauriFetch(url, init as never);
+  }
+}
+
 async function requestEnvelope<T>(path: string, init?: RequestInit): Promise<T> {
   const cfg = requireConfig();
   let response: Response;
   try {
-    response = await fetch(`${cfg.baseUrl}${path}`, {
+    response = await httpFetch(`${cfg.baseUrl}${path}`, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
@@ -174,7 +196,7 @@ export function cancelAgentRun(
 export async function probeHealth(options: { signal?: AbortSignal } = {}): Promise<boolean> {
   const cfg = requireConfig();
   try {
-    await fetch(`${cfg.baseUrl}/actuator/health`, {
+    await httpFetch(`${cfg.baseUrl}/actuator/health`, {
       method: 'GET',
       headers: { 'X-API-Key': cfg.apiKey },
       signal: options.signal,
@@ -237,7 +259,10 @@ export async function waitForAgentReady(
       const detail = lastStatus
         ? `running=${lastStatus.running ?? lastStatus.status}, port=${lastStatus.port}`
         : '无状态信息';
-      throw new AgentStartupError(`Agent 启动超时（${Math.round(timeoutMs / 1000)}s）：${detail}`);
+      const probe = getLastTransportError() || '探测无响应（未见传输层错误）';
+      throw new AgentStartupError(
+        `Agent 启动超时（${Math.round(timeoutMs / 1000)}s）：${detail}；${probe}`,
+      );
     }
     await sleep(intervalMs);
   }
@@ -414,7 +439,7 @@ export async function streamAgentMessage(
 
   let response: Response;
   try {
-    response = await fetch(`${cfg.baseUrl}/api/agent/stream`, {
+    response = await httpFetch(`${cfg.baseUrl}/api/agent/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
