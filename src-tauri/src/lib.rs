@@ -25,9 +25,14 @@ use tauri::{Manager, RunEvent, State};
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ServiceState {
-    /// running | stopped
+    /// 冻结契约字段：是否运行中（与 status 双写，供前端就绪判定）
+    running: bool,
+    /// running | stopped（保留诊断语义）
     status: String,
     port: Option<u16>,
+    /// 冻结契约字段：运行中子进程 pid
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pid: Option<u32>,
     jar_path: Option<String>,
     message: String,
     /// Java 运行时状态：ready | missing | invalid | too_old
@@ -446,18 +451,47 @@ fn resolve_java(app: &tauri::AppHandle) -> JavaCheck {
 // JAR 定位（JNF_AGENT_JAR → bundle resources → 开发回退）
 // ---------------------------------------------------------------------------
 
-/// JAR 是否真实可用：Spring Boot fat jar 至少兆级；
-/// 占位文件（tauri-build 要求 bundle resource 存在而留的 stub）不算。
+/// JAR 是否真实可用：Spring Boot fat jar 至少兆级且是合法 ZIP（PK 头）；
+/// 占位文件（tauri-build 要求 bundle resource 存在而留的 stub）不算；
+/// 拷贝竞态/杀软锁导致的半截副本（大小够但魔数不对）也不算。
 fn jar_usable(path: &Path) -> bool {
-    path.is_file()
-        && fs::metadata(path)
-            .map(|meta| meta.len() >= 1024 * 1024)
-            .unwrap_or(false)
+    if !path.is_file() {
+        return false;
+    }
+    let meta_ok = fs::metadata(path)
+        .map(|meta| meta.len() >= 1024 * 1024)
+        .unwrap_or(false);
+    if !meta_ok {
+        return false;
+    }
+    // 魔数校验：PK\x03\x04（普通条目）或 PK\x05\x06（空 zip）——只读前 4 字节
+    use std::io::Read;
+    let mut head = [0u8; 4];
+    fs::File::open(path)
+        .and_then(|mut file| file.read_exact(&mut head))
+        .map(|_| {
+            head[0] == 0x50 && head[1] == 0x4B && (head[2] == 0x03 || head[2] == 0x05)
+        })
+        .unwrap_or(false)
+}
+
+/// 剥离 Windows verbatim 路径前缀（`\\?\` / `\\?\UNC\`）：
+/// Tauri 的 resource_dir 等 API 可能返回 verbatim 形式，而 java -jar 不认该前缀，
+/// 表现为"尝试打开文件\\?\...时出现意外错误"。
+fn strip_verbatim(path: PathBuf) -> PathBuf {
+    let text = path.display().to_string();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    path
 }
 
 fn locate_agent_jar(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     if let Ok(path) = std::env::var("JNF_AGENT_JAR") {
-        let path = PathBuf::from(path);
+        let path = strip_verbatim(PathBuf::from(path));
         if jar_usable(&path) {
             return Ok(path);
         }
@@ -468,7 +502,7 @@ fn locate_agent_jar(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     }
 
     if let Ok(resource_dir) = app.path().resource_dir() {
-        let path = resource_dir.join("agent/jnf-harness-app.jar");
+        let path = strip_verbatim(resource_dir.join("agent/jnf-harness-app.jar"));
         if jar_usable(&path) {
             return Ok(path);
         }
@@ -507,8 +541,10 @@ fn generate_api_key() -> Result<String, String> {
 
 fn running_state(runtime: &AgentRuntime, message: String) -> ServiceState {
     ServiceState {
+        running: true,
         status: "running".to_string(),
         port: Some(runtime.port),
+        pid: Some(runtime.child.id()),
         jar_path: Some(runtime.jar_path.display().to_string()),
         message,
         runtime_status: "ready".to_string(),
@@ -526,8 +562,10 @@ fn stopped_state(
     message: String,
 ) -> ServiceState {
     ServiceState {
+        running: false,
         status: "stopped".to_string(),
         port,
+        pid: None,
         jar_path,
         message,
         runtime_status: java.status.clone(),
@@ -599,26 +637,63 @@ fn start_agent(app: tauri::AppHandle, state: State<AgentRuntimeState>) -> Result
 
     // 按冻结契约拉起后端：
     // java -Dserver.port=<port> -jar <jar> --spring.profiles.active=standalone --harness.auth.api-keys=<key>
-    let mut start_command = Command::new(&java.path);
-    start_command
-        .arg(format!("-Dserver.port={port}"))
-        .arg("-jar")
-        .arg(&jar_path)
-        .arg("--spring.profiles.active=standalone");
-    if let Some(key) = &api_key {
-        start_command.arg(format!("--harness.auth.api-keys={key}"));
+    //
+    // 含快速失败退避重试（最多 3 次）：构建期资源重拷 / 杀软实时扫描会短暂锁住 jar，
+    // 表现为 java"打开文件时出现意外错误"并立即退出——退避后重试即可自愈。
+    let mut child: Option<Child> = None;
+    let mut last_error = String::new();
+    for attempt in 1..=3_u32 {
+        let mut start_command = Command::new(&java.path);
+        start_command
+            .arg(format!("-Dserver.port={port}"))
+            .arg("-jar")
+            .arg(&jar_path)
+            .arg("--spring.profiles.active=standalone");
+        if let Some(key) = &api_key {
+            start_command.arg(format!("--harness.auth.api-keys={key}"));
+        }
+        match start_command
+            .current_dir(&data_dir)
+            .stdout(Stdio::from(
+                log_file
+                    .try_clone()
+                    .map_err(|error| format!("复制日志句柄失败：{error}"))?,
+            ))
+            .stderr(Stdio::from(
+                log_file
+                    .try_clone()
+                    .map_err(|error| format!("复制日志句柄失败：{error}"))?,
+            ))
+            .spawn()
+        {
+            Ok(mut spawned) => {
+                // 600ms 内退出 = jar 打开失败等启动即退问题；存活则视为启动成功
+                std::thread::sleep(std::time::Duration::from_millis(600));
+                match spawned.try_wait() {
+                    Ok(None) => {
+                        child = Some(spawned);
+                        break;
+                    }
+                    Ok(Some(status)) => {
+                        last_error = format!("第 {attempt} 次启动即退出（{status}）");
+                    }
+                    Err(error) => {
+                        last_error = format!("第 {attempt} 次状态探测失败：{error}");
+                    }
+                }
+            }
+            Err(error) => {
+                last_error = format!("第 {attempt} 次 spawn 失败：{error}");
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(800 * attempt as u64));
     }
-
-    let child = start_command
-        .current_dir(&data_dir)
-        .stdout(Stdio::from(
-            log_file
-                .try_clone()
-                .map_err(|error| format!("复制日志句柄失败：{error}"))?,
-        ))
-        .stderr(Stdio::from(log_file))
-        .spawn()
-        .map_err(|error| format!("启动 JAR 失败（Java {}）：{error}", java.version))?;
+    let child = child.ok_or_else(|| {
+        format!(
+            "启动 JAR 失败（Java {}）：{}。若日志为 jar 打开异常，多为构建期资源拷贝/杀软短暂锁文件，稍后重试即可",
+            java.version, last_error
+        )
+    })?;
 
     if let Err(error) = persist_runtime(&runtime_path, &child, port, &jar_path) {
         let mut child = child;
@@ -715,6 +790,30 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 冻结契约形状：running/pid/apiKey 必须在（前端就绪判定依赖，防止再次漂移）。
+    #[test]
+    fn service_state_carries_frozen_contract_fields() {
+        let state = ServiceState {
+            running: true,
+            status: "running".to_string(),
+            port: Some(12345),
+            pid: Some(42),
+            jar_path: None,
+            message: "ok".to_string(),
+            runtime_status: "ready".to_string(),
+            runtime_source: None,
+            java_path: None,
+            java_version: None,
+            api_key: Some("key".to_string()),
+        };
+        let json = serde_json::to_value(&state).unwrap();
+        assert_eq!(json["running"], true);
+        assert_eq!(json["status"], "running");
+        assert_eq!(json["pid"], 42);
+        assert_eq!(json["port"], 12345);
+        assert_eq!(json["apiKey"], "key");
+    }
 
     #[test]
     fn parses_modern_java_version() {

@@ -219,10 +219,14 @@ export async function waitForAgentReady(
       }
     }
 
-    if (lastStatus && lastStatus.running && lastStatus.port > 0) {
+    // 就绪判定兼容两种形状：冻结契约 running: boolean / 壳的 status: 'running'
+    const isRunning =
+      lastStatus != null &&
+      (lastStatus.running === true || lastStatus.status === 'running');
+    if (lastStatus && isRunning && lastStatus.port > 0) {
       configureAgentClient({
         baseUrl: `http://127.0.0.1:${lastStatus.port}`,
-        apiKey: lastStatus.apiKey,
+        apiKey: lastStatus.apiKey ?? '',
       });
       if (await probeHealth({ signal: options.signal })) {
         return lastStatus;
@@ -231,7 +235,7 @@ export async function waitForAgentReady(
 
     if (Date.now() >= deadline) {
       const detail = lastStatus
-        ? `running=${lastStatus.running}, port=${lastStatus.port}`
+        ? `running=${lastStatus.running ?? lastStatus.status}, port=${lastStatus.port}`
         : '无状态信息';
       throw new AgentStartupError(`Agent 启动超时（${Math.round(timeoutMs / 1000)}s）：${detail}`);
     }

@@ -20,10 +20,13 @@ export const API_SUCCESS_CODE = '00000';
 
 /** invoke("agent_status") 返回值。 */
 export interface AgentStatus {
+  /** 冻结契约：是否运行中 */
   running: boolean;
   port: number;
   apiKey: string;
   pid?: number;
+  /** 壳的诊断语义：running | stopped（兼容读取） */
+  status?: string;
 }
 
 /** /api/agent/message 与 /api/agent/stream 的请求体。 */
