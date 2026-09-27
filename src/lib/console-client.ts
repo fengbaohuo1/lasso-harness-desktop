@@ -83,9 +83,16 @@ export function toChatMessages(
       for (const block of message.blocks.filter((b) => b.type === 'tool_result')) {
         const card = previous?.toolCards.find((c) => c.callId === block.callId);
         if (card) {
-          card.status = block.error ? 'error' : 'success';
-          card.result = block.content;
-          card.error = block.error ? String(block.error) : undefined;
+          // error 是布尔标记；真实错误信息在 content 里（不能把 "true" 当错误文案展示）
+          if (block.error) {
+            card.status = 'error';
+            card.error = typeof block.content === 'string' ? block.content : formatValue(block.content);
+            card.result = undefined;
+          } else {
+            card.status = 'success';
+            card.result = block.content;
+            card.error = undefined;
+          }
           card.endedAt = Date.now();
         }
       }
@@ -111,5 +118,19 @@ function safeParse(raw?: string): unknown {
     return JSON.parse(raw);
   } catch {
     return raw;
+  }
+}
+
+function formatValue(value: unknown): string {
+  if (value == null) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
   }
 }

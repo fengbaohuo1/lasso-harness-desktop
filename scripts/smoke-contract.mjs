@@ -139,6 +139,24 @@ record('插件配置 KV 写读删',
   cfgJson.data && cfgJson.data.region === 'cn' && cfgJson.data.level === 'debug'
   && cfgJson2.data && cfgJson2.data.level === undefined && cfgJson2.data.region === 'cn');
 
+// 12. 回放契约：tool_call 参数必须是 JSON 字符串（防 Map.toString 复发）+ tool_result 错误语义
+{
+  const rep = await fetch(base + '/api/harness/console/sessions/smoke-agent/messages', { headers });
+  const repJson = await rep.json();
+  const blocks = (repJson.data || []).flatMap((m) => m.blocks || []);
+  const calls = blocks.filter((b) => b.type === 'tool_call');
+  const results = blocks.filter((b) => b.type === 'tool_result');
+  const argsJsonOk = calls.every((c) => {
+    if (typeof c.arguments !== 'string') return false;
+    if (c.arguments.trim() === '' || c.arguments.trim() === '{}') return true;
+    try { JSON.parse(c.arguments); return true; } catch { return false; }
+  });
+  const resultShapeOk = results.every((r) => typeof r.error === 'boolean' && 'content' in r);
+  record('回放契约：参数 JSON + tool_result 错误语义',
+    rep.status === 200 && argsJsonOk && resultShapeOk,
+    `tool_call=${calls.length} tool_result=${results.length}`);
+}
+
 const failed = checks.filter((c) => !c.ok);
 console.log(failed.length === 0 ? '契约冒烟全部通过' : ('失败 ' + failed.length + ' 项'));
 process.exit(failed.length === 0 ? 0 : 1);
