@@ -78,12 +78,13 @@ export interface StepBreakEvent {
   status?: string;
 }
 
-/** tool_result {toolName, callId, result, error} —— 工具调用结束。 */
+/** tool_result {toolName, callId, result, error} —— 工具调用结束。
+ *  error 是布尔标记（true=失败），失败/成功的内容文本都在 result（M8 #5 语义）。 */
 export interface ToolResultEvent {
   toolName: string;
   callId: string;
   result: unknown;
-  error?: string | null;
+  error?: boolean | string | null;
 }
 
 /** finish {turn} */
@@ -171,6 +172,8 @@ export interface ChatMessage {
   error?: string;
   /** 创建时间（毫秒时间戳，M7 时间戳展示）。 */
   createdAt?: number;
+  /** 消息内文本/工具卡到达序（M8 #8）；渲染以此为准。 */
+  segments?: MsgSegment[];
 }
 
 /** 启动链阶段。 */
@@ -217,3 +220,15 @@ export interface RuntimeApprovalDto {
 
 /** 审批裁决。 */
 export type ApprovalVerdict = 'ALLOW_ONCE' | 'ALLOW_SESSION' | 'DENY';
+
+/** GET /api/harness/questions/runtime/pending 条目（ask_user_question 挂起-作答）。 */
+export interface RuntimeQuestionDto {
+  questionId: string;
+  question: string;
+  options: string[];
+}
+
+/** 消息内混排片段（M8 #8）：文本/工具卡按到达序保存。 */
+export type MsgSegment =
+  | { kind: 'text'; text: string }
+  | { kind: 'card'; card: ToolCardState };

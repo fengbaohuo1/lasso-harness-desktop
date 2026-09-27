@@ -1,19 +1,30 @@
 /**
- * 对话视图（M7.3）：消息气泡 + 流式渲染 + 工具卡片 + 审批插槽。
- * 助手消息走 markdown-lite（代码块带复制）；自动滚动 +「回到底部」；消息复制与时间戳。
+ * 对话视图（M8）：消息 + 流式渲染 + 工具卡片（默认折叠）+ 审批/提问插槽。
+ * 助手消息为全宽正文（无气泡），用户消息右侧气泡；消息内文本/工具卡按到达序混排；
+ * 助手正文走 markdown-lite（表格/代码块带复制）。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import MarkdownLite from '../lib/markdown-lite';
 import ApprovalCard from './ApprovalCard';
-import type { ApprovalVerdict, ChatMessage, RuntimeApprovalDto, ToolCardState } from '../types';
+import QuestionCard from './QuestionCard';
+import type {
+  ApprovalVerdict,
+  ChatMessage,
+  MsgSegment,
+  RuntimeApprovalDto,
+  RuntimeQuestionDto,
+  ToolCardState,
+} from '../types';
 
 export interface ConversationViewProps {
   messages: ChatMessage[];
   streaming: boolean;
   approvals?: RuntimeApprovalDto[];
+  questions?: RuntimeQuestionDto[];
   onResolveApproval?: (approvalId: string, verdict: ApprovalVerdict) => void;
+  onAnswerQuestion?: (questionId: string, answer: string) => void;
 }
 
 /** 把任意值渲染成可读文本（JSON 优先）。 */
@@ -64,7 +75,9 @@ function CopyTextButton({ text }: { text: string }): ReactElement | null {
   );
 }
 
+/** 工具卡片（M8 #1）：默认折叠，头部一行摘要，点击展开参数/结果。 */
 function ToolCard({ card }: { card: ToolCardState }): ReactElement {
+  const [expanded, setExpanded] = useState(false);
   const argsText = formatValue(card.args);
   const resultText = card.error ? card.error : formatValue(card.result);
   const statusLabel: Record<ToolCardState['status'], string> = {
@@ -72,10 +85,15 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
     success: '成功',
     error: '失败',
   };
+  const summary = (resultText || argsText || '').split('\n')[0].slice(0, 60);
 
   return (
     <div className={`tool-card tool-card--${card.status}`}>
-      <div className="tool-card__head">
+      <button
+        type="button"
+        className="tool-card__head tool-card__head--toggle"
+        onClick={() => setExpanded((prev) => !prev)}
+      >
         <span className={`tool-card__icon tool-card__icon--${card.status}`} aria-hidden="true">
           {card.status === 'running' ? '⚙' : card.status === 'success' ? '✓' : '✕'}
         </span>
@@ -83,62 +101,104 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
         <span className={`tool-card__status tool-card__status--${card.status}`}>
           {statusLabel[card.status]}
         </span>
-      </div>
-      {argsText ? (
-        <div className="tool-card__section">
-          <div className="tool-card__label">参数</div>
-          <pre className="tool-card__pre">{argsText}</pre>
-        </div>
-      ) : null}
-      {resultText ? (
-        <div className="tool-card__section">
-          <div className="tool-card__label">{card.error ? '错误' : '结果'}</div>
-          <pre className="tool-card__pre">{resultText}</pre>
+        {!expanded && summary ? <span className="tool-card__summary">{summary}</span> : null}
+        <span className="tool-card__chevron" aria-hidden="true">
+          {expanded ? '▾' : '▸'}
+        </span>
+      </button>
+      {expanded ? (
+        <div>
+          {argsText ? (
+            <div className="tool-card__section">
+              <div className="tool-card__label">参数</div>
+              <pre className="tool-card__pre">{argsText}</pre>
+            </div>
+          ) : null}
+          {resultText ? (
+            <div className="tool-card__section">
+              <div className="tool-card__label">{card.error ? '错误' : '结果'}</div>
+              <pre className="tool-card__pre">{resultText}</pre>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }): ReactElement {
-  const isUser = message.role === 'user';
+/** 消息内混排（M8 #8）：无 segments 时按 先卡片后文本 兜底。 */
+function Segments({
+  message,
+  isUser,
+}: {
+  message: ChatMessage;
+  isUser: boolean;
+}): ReactElement {
+  const segments: MsgSegment[] =
+    message.segments ??
+    [
+      ...message.toolCards.map((card): MsgSegment => ({ kind: 'card', card })),
+      ...(message.text ? [{ kind: 'text' as const, text: message.text }] : []),
+    ];
   return (
-    <div className={`bubble-row bubble-row--${isUser ? 'user' : 'assistant'}`}>
-      <div className={`bubble bubble--${isUser ? 'user' : 'assistant'}`}>
-        {!isUser && message.toolCards.length > 0 ? (
-          <div className="tool-cards">
-            {message.toolCards.map((card) => (
-              <ToolCard key={card.key} card={card} />
-            ))}
+    <>
+      {segments.map((segment, index) =>
+        segment.kind === 'text' ? (
+          <div key={`t${index}`} className="message-text">
+            {isUser ? (
+              <span className="message-text__plain">{segment.text}</span>
+            ) : (
+              <MarkdownLite text={segment.text} />
+            )}
+            {!isUser && message.status === 'streaming' && index === segments.length - 1 ? (
+              <span className="cursor" aria-hidden="true" />
+            ) : null}
           </div>
-        ) : null}
+        ) : (
+          <ToolCard key={segment.card.key} card={segment.card} />
+        ),
+      )}
+    </>
+  );
+}
 
-        {message.text ? (
-          <div className="bubble__text">
-            {isUser ? message.text : <MarkdownLite text={message.text} />}
-            {message.status === 'streaming' ? <span className="cursor" aria-hidden="true" /> : null}
+function MessageBlock({ message }: { message: ChatMessage }): ReactElement {
+  const isUser = message.role === 'user';
+  const copyText = message.text;
+  return (
+    <div className={`message-row message-row--${isUser ? 'user' : 'assistant'}`}>
+      {isUser ? (
+        <div className="bubble bubble--user">
+          <Segments message={message} isUser />
+          <div className="bubble__meta">
+            {timeLabel(message.createdAt)}
+            {copyText ? <CopyTextButton text={copyText} /> : null}
           </div>
-        ) : null}
-
-        {message.status === 'streaming' && message.text === '' && message.toolCards.length === 0 ? (
-          <div className="typing" aria-label="生成中">
-            <span />
-            <span />
-            <span />
-          </div>
-        ) : null}
-
-        {message.status === 'error' && message.error ? (
-          <div className="bubble__error">{message.error}</div>
-        ) : null}
-
-        <div className="bubble__meta">
-          {timeLabel(message.createdAt)}
-          {message.status === 'cancelled' ? ' · 已停止' : ''}
-          {message.status === 'error' ? ' · 出错' : ''}
-          {message.text ? <CopyTextButton text={message.text} /> : null}
         </div>
-      </div>
+      ) : (
+        <div className="assistant-block">
+          <Segments message={message} isUser={false} />
+
+          {message.status === 'streaming' && message.text === '' && message.toolCards.length === 0 ? (
+            <div className="typing" aria-label="生成中">
+              <span />
+              <span />
+              <span />
+            </div>
+          ) : null}
+
+          {message.status === 'error' && message.error ? (
+            <div className="bubble__error">{message.error}</div>
+          ) : null}
+
+          <div className="message-meta">
+            {timeLabel(message.createdAt)}
+            {message.status === 'cancelled' ? ' · 已停止' : ''}
+            {message.status === 'error' ? ' · 出错' : ''}
+            {copyText ? <CopyTextButton text={copyText} /> : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -147,7 +207,9 @@ export default function ConversationView({
   messages,
   streaming,
   approvals = [],
+  questions = [],
   onResolveApproval,
+  onAnswerQuestion,
 }: ConversationViewProps): ReactElement {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [nearBottom, setNearBottom] = useState(true);
@@ -163,7 +225,7 @@ export default function ConversationView({
     if (nearBottom) {
       scrollToBottom('auto');
     }
-  }, [messages, approvals, nearBottom, scrollToBottom]);
+  }, [messages, approvals, questions, nearBottom, scrollToBottom]);
 
   const handleScroll = (): void => {
     const el = scrollRef.current;
@@ -185,10 +247,13 @@ export default function ConversationView({
             </p>
           </div>
         ) : (
-          messages.map((message) => <MessageBubble key={message.id} message={message} />)
+          messages.map((message) => <MessageBlock key={message.id} message={message} />)
         )}
         {approvals.length > 0 && onResolveApproval ? (
           <ApprovalCard approvals={approvals} onResolve={onResolveApproval} />
+        ) : null}
+        {questions.length > 0 && onAnswerQuestion ? (
+          <QuestionCard questions={questions} onAnswer={onAnswerQuestion} />
         ) : null}
       </div>
       {!nearBottom ? (

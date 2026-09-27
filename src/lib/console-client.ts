@@ -8,7 +8,9 @@ import type {
   ApprovalVerdict,
   ChatMessage,
   ConsoleMessage,
+  MsgSegment,
   RuntimeApprovalDto,
+  RuntimeQuestionDto,
   SessionSummary,
 } from '../types';
 
@@ -34,6 +36,20 @@ export function resolveApproval(
     `/api/harness/approvals/runtime/${encodeURIComponent(approvalId)}/resolve`,
     'POST',
     { verdict },
+  );
+}
+
+/** 待作答问题（ask_user_question 挂起）。 */
+export function fetchPendingQuestions(): Promise<RuntimeQuestionDto[]> {
+  return apiRequest<RuntimeQuestionDto[]>('/api/harness/questions/runtime/pending');
+}
+
+/** 提交回答，Agent 流式恢复。 */
+export function answerQuestion(questionId: string, answer: string): Promise<unknown> {
+  return apiRequest(
+    `/api/harness/questions/runtime/${encodeURIComponent(questionId)}/answer`,
+    'POST',
+    { answer },
   );
 }
 
@@ -69,11 +85,20 @@ export function toChatMessages(
           status: 'running' as const,
           startedAt: Date.now(),
         }));
+      // segments：文本先于卡片（生成序近似），卡片与 toolCards 同引用，结果折入即同步
+      const segments: MsgSegment[] = [];
+      if (message.text) {
+        segments.push({ kind: 'text', text: message.text });
+      }
+      for (const card of toolCards) {
+        segments.push({ kind: 'card', card });
+      }
       out.push({
         id: `${idPrefix}-a${out.length}`,
         role: 'assistant',
         text: message.text,
         toolCards,
+        segments,
         status: 'done',
       });
       continue;

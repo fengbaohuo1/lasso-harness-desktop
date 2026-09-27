@@ -24,7 +24,9 @@ import {
   waitForAgentReady,
 } from './lib/agent-client';
 import {
+  answerQuestion,
   fetchPendingApprovals,
+  fetchPendingQuestions,
   fetchSessionMessages,
   fetchSessions,
   resolveApproval,
@@ -37,9 +39,9 @@ import type {
   BootState,
   ChatMessage,
   RuntimeApprovalDto,
+  RuntimeQuestionDto,
   SessionSummary,
   ToolCardState,
-  ToolCardStatus,
 } from './types';
 
 /** 默认会话（与后端 agentId 语义一致）。 */
@@ -76,6 +78,7 @@ export default function App(): ReactElement {
   const [agentId, setAgentId] = useState<string>(DEFAULT_AGENT_ID);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [approvals, setApprovals] = useState<RuntimeApprovalDto[]>([]);
+  const [questions, setQuestions] = useState<RuntimeQuestionDto[]>([]);
   const [activeModel, setActiveModel] = useState<string | null>(null);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
 
@@ -141,7 +144,7 @@ export default function App(): ReactElement {
     void refreshModel();
   }, [boot.phase, refreshSessions, refreshModel]);
 
-  /* ----------------------------- 运行期审批轮询（挂起-裁决） ----------------------------- */
+  /* ----------------------------- 运行期审批/提问轮询（挂起-裁决/作答） ----------------------------- */
 
   useEffect(() => {
     if (boot.phase !== 'ready') {
@@ -150,9 +153,13 @@ export default function App(): ReactElement {
     let stopped = false;
     const poll = async (): Promise<void> => {
       try {
-        const pending = await fetchPendingApprovals();
+        const [pending, pendingQuestions] = await Promise.all([
+          fetchPendingApprovals(),
+          fetchPendingQuestions(),
+        ]);
         if (!stopped) {
           setApprovals(pending);
+          setQuestions(pendingQuestions);
         }
       } catch {
         // 轮询失败静默（下一轮重试）
@@ -172,6 +179,16 @@ export default function App(): ReactElement {
       .finally(() => {
         void fetchPendingApprovals()
           .then(setApprovals)
+          .catch(() => undefined);
+      });
+  }, []);
+
+  const handleAnswerQuestion = useCallback((questionId: string, answer: string) => {
+    void answerQuestion(questionId, answer)
+      .catch((err) => setBanner(describeError(err)))
+      .finally(() => {
+        void fetchPendingQuestions()
+          .then(setQuestions)
           .catch(() => undefined);
       });
   }, []);
@@ -236,6 +253,7 @@ export default function App(): ReactElement {
         role: 'assistant',
         text: '',
         toolCards: [],
+        segments: [],
         status: 'streaming',
         createdAt: Date.now(),
       };
@@ -251,68 +269,84 @@ export default function App(): ReactElement {
         );
       };
 
+      // M8 #8：文本/卡片按到达序写入 segments；#5：error 是布尔标记，内容取 result
+      const appendText = (m: ChatMessage, content: string): Partial<ChatMessage> => {
+        const segments = [...(m.segments ?? [])];
+        const last = segments[segments.length - 1];
+        if (last && last.kind === 'text') {
+          segments[segments.length - 1] = { kind: 'text', text: last.text + content };
+        } else {
+          segments.push({ kind: 'text', text: content });
+        }
+        return { text: m.text + content, segments };
+      };
+
+      const upsertCard = (m: ChatMessage, card: ToolCardState): Partial<ChatMessage> => {
+        const toolCards = m.toolCards.slice();
+        const idx = toolCards.findIndex((c) => c.key === card.key);
+        if (idx >= 0) {
+          toolCards[idx] = card;
+        } else {
+          toolCards.push(card);
+        }
+        const segments = [...(m.segments ?? [])];
+        const segIdx = segments.findIndex(
+          (s) => s.kind === 'card' && s.card.key === card.key,
+        );
+        if (segIdx >= 0) {
+          segments[segIdx] = { kind: 'card', card };
+        } else {
+          segments.push({ kind: 'card', card });
+        }
+        return { toolCards, segments };
+      };
+
       try {
         await streamAgentMessage(
           { agentId: agentIdRef.current, message: text },
           {
             onChunk: ({ content }) => {
-              patchAssistant((m) => ({ text: m.text + (content ?? '') }));
+              if (content) {
+                patchAssistant((m) => appendText(m, content));
+              }
             },
             onStepBreak: (e) => {
               patchAssistant((m) => {
                 const key = e.callId || `${e.toolName}-${m.toolCards.length}`;
-                const card: ToolCardState = {
+                return upsertCard(m, {
                   key,
                   toolName: e.toolName ?? 'unknown_tool',
                   callId: e.callId ?? '',
                   args: e.args,
                   status: 'running',
                   startedAt: Date.now(),
-                };
-                const idx = m.toolCards.findIndex((c) => c.key === key);
-                if (idx >= 0) {
-                  const next = m.toolCards.slice();
-                  next[idx] = card;
-                  return { toolCards: next };
-                }
-                return { toolCards: [...m.toolCards, card] };
+                });
               });
             },
             onToolResult: (e) => {
               patchAssistant((m) => {
-                const next = m.toolCards.slice();
-                const idx = next.findIndex(
+                const existing = m.toolCards.find(
                   (c) =>
                     (Boolean(e.callId) && c.callId === e.callId) ||
                     (!e.callId && c.toolName === e.toolName),
                 );
-                const errorText =
-                  e.error == null || e.error === '' ? undefined : String(e.error);
-                const status: ToolCardStatus = errorText ? 'error' : 'success';
-                const base: ToolCardState =
-                  idx >= 0
-                    ? next[idx]
-                    : {
-                        key: e.callId || `${e.toolName}-${next.length}`,
-                        toolName: e.toolName ?? 'unknown_tool',
-                        callId: e.callId ?? '',
-                        args: undefined,
-                        status,
-                        startedAt: Date.now(),
-                      };
-                const merged: ToolCardState = {
-                  ...base,
-                  status,
+                // error 布尔标记（或兼容旧字符串）；错误/结果文案都在 result
+                const isError =
+                  e.error === true ||
+                  (typeof e.error === 'string' && e.error !== '' && e.error !== 'false');
+                const contentText =
+                  e.result == null ? '' : typeof e.result === 'string' ? e.result : JSON.stringify(e.result);
+                return upsertCard(m, {
+                  key: existing?.key ?? e.callId ?? `${e.toolName}-${m.toolCards.length}`,
+                  toolName: e.toolName ?? existing?.toolName ?? 'unknown_tool',
+                  callId: e.callId ?? '',
+                  args: existing?.args,
+                  status: isError ? 'error' : 'success',
                   result: e.result,
-                  error: errorText,
+                  error: isError ? contentText : undefined,
+                  startedAt: existing?.startedAt ?? Date.now(),
                   endedAt: Date.now(),
-                };
-                if (idx >= 0) {
-                  next[idx] = merged;
-                } else {
-                  next.push(merged);
-                }
-                return { toolCards: next };
+                });
               });
             },
             onDone: (e) => {
@@ -344,6 +378,9 @@ export default function App(): ReactElement {
         void refreshSessions();
         void fetchPendingApprovals()
           .then(setApprovals)
+          .catch(() => undefined);
+        void fetchPendingQuestions()
+          .then(setQuestions)
           .catch(() => undefined);
       }
     },
@@ -442,7 +479,9 @@ export default function App(): ReactElement {
               messages={messages}
               streaming={streaming}
               approvals={approvals}
+              questions={questions}
               onResolveApproval={handleResolveApproval}
+              onAnswerQuestion={handleAnswerQuestion}
             />
             <Composer
               disabled={!bootReady}

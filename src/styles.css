@@ -1024,6 +1024,175 @@ body {
   color: var(--text);
 }
 
+/* ----------------------------- M8：正文排版 / 折叠工具卡 / 问题卡 / 表格 ----------------------------- */
+
+.message-row {
+  display: flex;
+  padding: 6px 0;
+}
+
+.message-row--user {
+  justify-content: flex-end;
+}
+
+.message-row--assistant {
+  justify-content: flex-start;
+}
+
+/* 助手正文：全宽无气泡（M8 #2），用户消息保留右侧气泡 */
+.assistant-block {
+  width: 100%;
+  max-width: 100%;
+  padding: 4px 2px;
+}
+
+.message-text {
+  margin: 2px 0 6px;
+  line-height: 1.7;
+}
+
+.message-text__plain {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.bubble--user {
+  max-width: 72%;
+}
+
+/* 工具卡折叠态（M8 #1） */
+.tool-card__head--toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tool-card__summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.tool-card__chevron {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.tool-card__name {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+/* 问题卡（M8 #4） */
+.question-card {
+  border: 1px solid rgba(79, 140, 255, 0.45);
+  border-radius: var(--radius);
+  background: rgba(79, 140, 255, 0.08);
+  padding: 12px 14px;
+}
+
+.question-card__badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(79, 140, 255, 0.2);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.question-card__title {
+  margin: 8px 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.question-card__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.question-card__option {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.question-card__option:hover {
+  border-color: var(--accent);
+  background: var(--running-bg);
+}
+
+.question-card__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.question-card__actions input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+/* markdown 表格（M8 #3） */
+.md-table-wrap {
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+.md-table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.md-table th,
+.md-table td {
+  padding: 5px 12px 5px 8px;
+  border: 1px solid var(--border-strong);
+  text-align: left;
+  vertical-align: top;
+}
+
+.md-table th {
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
+
 /* ----------------------------- 动画 ----------------------------- */
 
 @keyframes spin {

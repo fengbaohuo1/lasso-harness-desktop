@@ -82,6 +82,16 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes;
 }
 
+/** 表格行拆分：| a | b | → ['a','b']。 */
+function splitTableRow(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').map((cell) => cell.trim());
+}
+
+const TABLE_DELIMITER = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$/;
+
 function renderProse(lines: string[], keyPrefix: string): ReactElement[] {
   const out: ReactElement[] = [];
   let list: { ordered: boolean; items: string[] } | null = null;
@@ -122,7 +132,50 @@ function renderProse(lines: string[], keyPrefix: string): ReactElement[] {
     }
   };
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    // GFM 表格：表头行 | 分隔行 | 数据行…
+    if (
+      line.includes('|') &&
+      i + 1 < lines.length &&
+      TABLE_DELIMITER.test(lines[i + 1]) &&
+      splitTableRow(line).length > 1
+    ) {
+      flushParagraph();
+      flushList();
+      const headers = splitTableRow(line);
+      const rows: string[][] = [];
+      i += 2;
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
+        rows.push(splitTableRow(lines[i]));
+        i += 1;
+      }
+      i -= 1;
+      out.push(
+        <div key={`${keyPrefix}-t${out.length}`} className="md-table-wrap">
+          <table className="md-table">
+            <thead>
+              <tr>
+                {headers.map((h, hi) => (
+                  <th key={hi}>{renderInline(h, `${keyPrefix}-th${hi}`)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((cell, ci) => (
+                    <td key={ci}>{renderInline(cell, `${keyPrefix}-td${ri}-${ci}`)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+
     const heading = /^(#{1,4})\s+(.*)$/.exec(line);
     const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
     const ordered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
