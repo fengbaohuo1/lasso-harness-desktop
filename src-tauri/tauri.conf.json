@@ -30,6 +30,7 @@
     "targets": "all",
     "resources": {
       "../resources/agent/jnf-harness-app.jar": "agent/jnf-harness-app.jar",
+      "../resources/agent/plugins": "agent/plugins",
       "../resources/agent/runtime": "agent/runtime"
     },
     "icon": [

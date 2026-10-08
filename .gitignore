@@ -9,6 +9,7 @@ src-tauri/gen/schemas/
 
 # 内嵌后端资源（由 npm run agent:prepare 生成，不入 Git）
 resources/agent/*.jar
+resources/agent/plugins/
 resources/agent/runtime/
 
 # 本地数据
