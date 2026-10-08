@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const sourceJar = join(projectRoot, "..", "jnf-harness", "jnf-harness-app", "target", "jnf-harness-app.jar");
 const sourcePlugins = join(projectRoot, "..", "jnf-harness", "jnf-harness-app", "target", "plugins");
+const sourceSampleJar = join(projectRoot, "..", "jnf-harness", "jnf-harness-sample-plugin", "target");
 const targetJar = join(projectRoot, "resources", "agent", "jnf-harness-app.jar");
 const targetPlugins = join(projectRoot, "resources", "agent", "plugins");
 const MIN_JAR_BYTES = 1024 * 1024; // 真实 Spring Boot fat jar 至少兆级
@@ -80,9 +81,22 @@ mkdirSync(dirname(targetJar), { recursive: true });
 copyFileSync(sourceJar, targetJar);
 console.log(`[agent:copy] ${sourceJar} -> ${targetJar}`);
 
-// 插件目录：全量替换（避免残留已下线插件）
-rmSync(targetPlugins, { recursive: true, force: true });
+// 插件目录：只替换 *.jar（保留目录插件如 hello-ui 等手放制品）；旧 jar 先清避免残留已下线插件
 mkdirSync(targetPlugins, { recursive: true });
+for (const name of readdirSync(targetPlugins)) {
+  if (name.endsWith(".jar")) {
+    rmSync(join(targetPlugins, name), { force: true });
+  }
+}
+// sample 插件（前后端全栈模板）一并进包
+if (existsSync(sourceSampleJar)) {
+  for (const name of readdirSync(sourceSampleJar)) {
+    if (name.endsWith(".jar") && !name.endsWith(".jar.original") && name.includes("sample-plugin")) {
+      copyFileSync(join(sourceSampleJar, name), join(targetPlugins, name));
+      console.log(`[agent:copy] plugins/${name}（sample）`);
+    }
+  }
+}
 for (const name of sourcePluginJars) {
   copyFileSync(join(sourcePlugins, name), join(targetPlugins, name));
   console.log(`[agent:copy] plugins/${name}`);
