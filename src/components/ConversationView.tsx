@@ -9,6 +9,7 @@ import type { ReactElement } from 'react';
 import MarkdownLite from '../lib/markdown-lite';
 import ApprovalCard from './ApprovalCard';
 import QuestionCard from './QuestionCard';
+import { RefreshIcon } from './icons';
 import type {
   ApprovalVerdict,
   ChatMessage,
@@ -18,6 +19,9 @@ import type {
   ToolCardState,
 } from '../types';
 
+/** 欢迎页快捷入口动作（F4 空态）。 */
+export type QuickAction = 'chat' | 'models' | 'plugins' | 'about';
+
 export interface ConversationViewProps {
   messages: ChatMessage[];
   streaming: boolean;
@@ -25,6 +29,10 @@ export interface ConversationViewProps {
   questions?: RuntimeQuestionDto[];
   onResolveApproval?: (approvalId: string, verdict: ApprovalVerdict) => void;
   onAnswerQuestion?: (questionId: string, answer: string) => void;
+  /** 重新生成（F4）：重发最后一条助手消息的上一条用户消息。 */
+  onRegenerate?: () => void;
+  /** 欢迎页快捷入口（F4 空态）。 */
+  onQuickAction?: (action: QuickAction) => void;
 }
 
 /** 把任意值渲染成可读文本（JSON 优先）。 */
@@ -162,7 +170,15 @@ function Segments({
   );
 }
 
-function MessageBlock({ message }: { message: ChatMessage }): ReactElement {
+function MessageBlock({
+  message,
+  showRegenerate,
+  onRegenerate,
+}: {
+  message: ChatMessage;
+  showRegenerate: boolean;
+  onRegenerate?: () => void;
+}): ReactElement {
   const isUser = message.role === 'user';
   const copyText = message.text;
   return (
@@ -196,6 +212,26 @@ function MessageBlock({ message }: { message: ChatMessage }): ReactElement {
             {message.status === 'cancelled' ? ' · 已停止' : ''}
             {message.status === 'error' ? ' · 出错' : ''}
             {copyText ? <CopyTextButton text={copyText} /> : null}
+            {message.regenerating && message.status === 'streaming' ? (
+              <button
+                type="button"
+                className="message-meta__action message-meta__action--busy"
+                disabled
+                title="正在重新生成"
+              >
+                <RefreshIcon /> 生成中…
+              </button>
+            ) : null}
+            {showRegenerate && onRegenerate ? (
+              <button
+                type="button"
+                className="message-meta__action"
+                title="重新生成：重发上一条用户消息"
+                onClick={onRegenerate}
+              >
+                <RefreshIcon /> 重新生成
+              </button>
+            ) : null}
           </div>
         </div>
       )}
@@ -210,6 +246,8 @@ export default function ConversationView({
   questions = [],
   onResolveApproval,
   onAnswerQuestion,
+  onRegenerate,
+  onQuickAction,
 }: ConversationViewProps): ReactElement {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [nearBottom, setNearBottom] = useState(true);
@@ -235,19 +273,82 @@ export default function ConversationView({
     setNearBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
   };
 
+  // 最后一条助手消息提供「重新生成」（流式中不显示）
+  const lastAssistantIndex = (() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === 'assistant') {
+        return i;
+      }
+    }
+    return -1;
+  })();
+
   return (
     <div className="conversation-wrap">
       {streaming ? <div className="streaming-bar" aria-hidden="true" /> : null}
       <div className="conversation" ref={scrollRef} onScroll={handleScroll}>
         {messages.length === 0 ? (
-          <div className="conversation__empty">
-            <p className="conversation__hint">
-              我是 jnf-harness 智能体。直接输入消息开始对话；我会按需调用工具
-              （文件/搜索/命令等），涉及敏感操作时会在这里向你申请审批。
+          <div className="welcome-hero">
+            <div className="welcome-hero__logo" aria-hidden="true">
+              ◆
+            </div>
+            <h1 className="welcome-hero__title">jnf-harness Desktop</h1>
+            <p className="welcome-hero__desc">
+              自有 Agent Harness 桌面端：对话驱动，按需调用工具（文件/搜索/命令），
+              敏感操作先审批后执行，会话事件全程可回放。
+            </p>
+            <div className="welcome-hero__cards">
+              <button
+                type="button"
+                className="welcome-card"
+                onClick={() => onQuickAction?.('chat')}
+              >
+                <div className="welcome-card__title">开始对话</div>
+                <div className="welcome-card__hint">聚焦输入框，直接提问或下达任务</div>
+              </button>
+              <button
+                type="button"
+                className="welcome-card"
+                onClick={() => onQuickAction?.('models')}
+              >
+                <div className="welcome-card__title">模型设置</div>
+                <div className="welcome-card__hint">配置厂商渠道、密钥，测试连接并启用</div>
+              </button>
+              <button
+                type="button"
+                className="welcome-card"
+                onClick={() => onQuickAction?.('plugins')}
+              >
+                <div className="welcome-card__title">插件管理</div>
+                <div className="welcome-card__hint">安装/启用/停用插件，编辑插件配置</div>
+              </button>
+              <button
+                type="button"
+                className="welcome-card"
+                onClick={() => onQuickAction?.('about')}
+              >
+                <div className="welcome-card__title">关于</div>
+                <div className="welcome-card__hint">版本、快捷键一览与项目说明</div>
+              </button>
+            </div>
+            <p className="welcome-hero__shortcut">
+              Enter 发送 · Shift+Enter 换行 · Ctrl+N 新对话 · Ctrl+, 设置
             </p>
           </div>
         ) : (
-          messages.map((message) => <MessageBlock key={message.id} message={message} />)
+          messages.map((message, index) => (
+            <MessageBlock
+              key={message.id}
+              message={message}
+              showRegenerate={
+                index === lastAssistantIndex &&
+                index === messages.length - 1 &&
+                !streaming &&
+                message.status !== 'streaming'
+              }
+              onRegenerate={onRegenerate}
+            />
+          ))
         )}
         {approvals.length > 0 && onResolveApproval ? (
           <ApprovalCard approvals={approvals} onResolve={onResolveApproval} />

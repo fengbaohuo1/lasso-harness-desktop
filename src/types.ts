@@ -174,6 +174,8 @@ export interface ChatMessage {
   createdAt?: number;
   /** 消息内文本/工具卡到达序（M8 #8）；渲染以此为准。 */
   segments?: MsgSegment[];
+  /** 重新生成中（F4）：流式期间在操作行显示 spinner。 */
+  regenerating?: boolean;
 }
 
 /** 启动链阶段。 */
@@ -187,10 +189,28 @@ export interface BootState {
 
 /* ----------------------------- M7：会话/审批/设置 DTO ----------------------------- */
 
-/** GET /api/harness/console/sessions 条目。 */
+/** 应用版本常量。来源：src-tauri/tauri.conf.json 的 version 字段（0.1.0，随打包更新）。 */
+export const APP_VERSION = '0.1.0';
+
+/** 时间字段兼容形状：epoch 毫秒或 ISO 字符串（后端 meta.json 两种都可能出）。 */
+export type TimeLike = number | string | null | undefined;
+
+/** GET /api/harness/console/sessions 条目（F3 起新增 title/createdAt/lastEventAt/eventCount，旧字段不动）。 */
 export interface SessionSummary {
   sessionId: string;
   events: number;
+  title?: string | null;
+  createdAt?: TimeLike;
+  lastEventAt?: TimeLike;
+  eventCount?: number;
+}
+
+/** GET /api/harness/console/sessions/{id}/usage（F6：事件聚合）。 */
+export interface SessionUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  turns: number;
 }
 
 /** 会话回放中的工具条目（tool_call / tool_result）。 */

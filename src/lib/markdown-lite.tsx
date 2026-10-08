@@ -1,7 +1,9 @@
 /**
- * markdown-lite（M7.3）：受控子集渲染，零依赖。
- * 支持：围栏代码块（语言标 + 复制按钮）、标题、无序/有序列表、段落、
- * 行内代码、加粗、链接。不引 react-markdown——聊天文本子集足够，避免依赖面。
+ * markdown-lite（M7.3 + F5）：受控子集渲染，零依赖。
+ * 支持：围栏代码块（语言标 + 复制按钮）、标题、无序/有序列表（嵌套，缩进 2 空格一级；
+ * 有序列表起始序号）、GFM 表格、引用块（> 可嵌套）、分割线（---/***）、图片
+ * （http/https/data:，限宽、点击不跳转）、段落、行内代码/加粗/链接/删除线。
+ * 流式增量输入容错：不完整围栏/表格按普通文本渲染，不崩。
  */
 
 import { useState } from 'react';
@@ -43,10 +45,11 @@ function fallbackCopy(text: string, done: () => void): void {
   document.body.removeChild(el);
 }
 
-/** 行内格式：`code`、**bold**、[text](url)、~~strike~~。 */
+/** 行内格式：`code`、**bold**、![img](url)、[text](url)、~~strike~~。 */
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\([^)\s]+\))|(~~[^~]+~~)/g;
+  const pattern =
+    /(`[^`]+`)|(\*\*[^*]+\*\*)|(!\[[^\]]*\]\([^)\s]+\))|(\[[^\]]+\]\([^)\s]+\))|(~~[^~]+~~)/g;
   let last = 0;
   let match: RegExpExecArray | null;
   let i = 0;
@@ -62,6 +65,21 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
       nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>);
     } else if (token.startsWith('~~')) {
       nodes.push(<del key={key}>{token.slice(2, -2)}</del>);
+    } else if (token.startsWith('!')) {
+      const m = /^!\[([^\]]*)\]\(([^)\s]+)\)$/.exec(token);
+      if (m) {
+        nodes.push(
+          <img
+            key={key}
+            className="md-img"
+            src={m[2]}
+            alt={m[1]}
+            onClick={(e) => e.preventDefault()}
+          />,
+        );
+      } else {
+        nodes.push(token);
+      }
     } else {
       const m = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(token);
       if (m) {
@@ -92,9 +110,126 @@ function splitTableRow(line: string): string[] {
 
 const TABLE_DELIMITER = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$/;
 
+const HR = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
+
+const BULLET = /^(\s*)[-*+]\s+(.*)$/;
+const ORDERED = /^(\s*)(\d+)[.)]\s+(.*)$/;
+
+/** 列表项：text + 子列表（嵌套按缩进 2 空格一级）。 */
+interface ListItemNode {
+  text: string;
+  children: ListNode[];
+}
+
+interface ListNode {
+  ordered: boolean;
+  start: number;
+  items: ListItemNode[];
+}
+
+interface ListMatch {
+  indent: number;
+  ordered: boolean;
+  num: number;
+  text: string;
+}
+
+function matchListItem(line: string): ListMatch | null {
+  const ordered = ORDERED.exec(line);
+  if (ordered) {
+    return {
+      indent: ordered[1].replace(/\t/g, '  ').length,
+      ordered: true,
+      num: parseInt(ordered[2], 10),
+      text: ordered[3],
+    };
+  }
+  const bullet = BULLET.exec(line);
+  if (bullet) {
+    return {
+      indent: bullet[1].replace(/\t/g, '  ').length,
+      ordered: false,
+      num: 1,
+      text: bullet[2],
+    };
+  }
+  return null;
+}
+
+/** 从 start 起解析一个列表块（同一缩进/同一类型），返回节点与下一行索引。 */
+function parseListBlock(
+  lines: string[],
+  start: number,
+  baseIndent: number,
+): { node: ListNode; next: number } {
+  const first = matchListItem(lines[start]);
+  const node: ListNode = {
+    ordered: first?.ordered ?? false,
+    start: first?.num ?? 1,
+    items: [],
+  };
+  let i = start;
+  while (i < lines.length) {
+    const m = matchListItem(lines[i]);
+    if (!m || m.indent < baseIndent) {
+      break;
+    }
+    if (m.indent > baseIndent) {
+      // 更深缩进 → 挂到上一个条目下（容错：无宿主条目时终止本块）
+      const parent = node.items[node.items.length - 1];
+      if (!parent) {
+        break;
+      }
+      const nested = parseListBlock(lines, i, m.indent);
+      parent.children.push(nested.node);
+      i = nested.next;
+      continue;
+    }
+    if (m.ordered !== node.ordered) {
+      break;
+    }
+    node.items.push({ text: m.text, children: [] });
+    i += 1;
+  }
+  return { node, next: i };
+}
+
+function renderList(node: ListNode, key: string): ReactElement {
+  const items = node.items.map((item, idx) => (
+    <li key={idx}>
+      {renderInline(item.text, `${key}-li${idx}`)}
+      {item.children.map((child, ci) => renderList(child, `${key}-c${idx}-${ci}`))}
+    </li>
+  ));
+  return node.ordered ? (
+    <ol key={key} className="md-list md-ol" start={node.start}>
+      {items}
+    </ol>
+  ) : (
+    <ul key={key} className="md-list">
+      {items}
+    </ul>
+  );
+}
+
+/** 引用块：连续 > 行，剥一层后递归渲染（>> 嵌套）。 */
+function parseQuote(lines: string[], start: number): { inner: string[]; next: number } {
+  const inner: string[] = [];
+  let i = start;
+  while (i < lines.length) {
+    const line = lines[i];
+    const m = /^\s*>\s?(.*)$/.exec(line) ?? /^\s*>(.*)$/.exec(line);
+    if (!m) {
+      break;
+    }
+    inner.push(m[1]);
+    i += 1;
+  }
+  return { inner, next: i };
+}
+
 function renderProse(lines: string[], keyPrefix: string): ReactElement[] {
   const out: ReactElement[] = [];
-  let list: { ordered: boolean; items: string[] } | null = null;
   let paragraph: string[] = [];
 
   const flushParagraph = (): void => {
@@ -112,25 +247,6 @@ function renderProse(lines: string[], keyPrefix: string): ReactElement[] {
       paragraph = [];
     }
   };
-  const flushList = (): void => {
-    if (list) {
-      const items = list.items.map((item, idx) => (
-        <li key={idx}>{renderInline(item, `${keyPrefix}-li${idx}`)}</li>
-      ));
-      out.push(
-        list.ordered ? (
-          <ol key={`${keyPrefix}-ol${out.length}`} className="md-list">
-            {items}
-          </ol>
-        ) : (
-          <ul key={`${keyPrefix}-ul${out.length}`} className="md-list">
-            {items}
-          </ul>
-        ),
-      );
-      list = null;
-    }
-  };
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
@@ -142,7 +258,6 @@ function renderProse(lines: string[], keyPrefix: string): ReactElement[] {
       splitTableRow(line).length > 1
     ) {
       flushParagraph();
-      flushList();
       const headers = splitTableRow(line);
       const rows: string[][] = [];
       i += 2;
@@ -177,34 +292,53 @@ function renderProse(lines: string[], keyPrefix: string): ReactElement[] {
     }
 
     const heading = /^(#{1,4})\s+(.*)$/.exec(line);
-    const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
-    const ordered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
     if (heading) {
       flushParagraph();
-      flushList();
       const level = heading[1].length;
       out.push(
         <p key={`${keyPrefix}-h${out.length}`} className={`md-h md-h${level}`}>
           {renderInline(heading[2], `${keyPrefix}-h${out.length}`)}
         </p>,
       );
-    } else if (bullet || ordered) {
+      continue;
+    }
+
+    // 分割线 --- / *** / ___（裸 --- 不会被表格/列表规则误吞）
+    if (HR.test(line)) {
       flushParagraph();
-      const isOrdered = Boolean(ordered);
-      if (!list || list.ordered !== isOrdered) {
-        flushList();
-        list = { ordered: isOrdered, items: [] };
-      }
-      list.items.push((bullet ? bullet[1] : ordered![1]).trim());
-    } else if (line.trim() === '') {
-      flushList();
+      out.push(<hr key={`${keyPrefix}-hr${out.length}`} className="md-hr" />);
+      continue;
+    }
+
+    // 引用块（可嵌套）
+    if (/^\s*>/.test(line)) {
+      flushParagraph();
+      const quote = parseQuote(lines, i);
+      i = quote.next - 1;
+      out.push(
+        <blockquote key={`${keyPrefix}-q${out.length}`} className="md-quote">
+          {renderProse(quote.inner, `${keyPrefix}-q${out.length}`)}
+        </blockquote>,
+      );
+      continue;
+    }
+
+    // 列表（嵌套 + 有序起始序号）
+    const listItem = matchListItem(line);
+    if (listItem) {
+      flushParagraph();
+      const block = parseListBlock(lines, i, listItem.indent);
+      i = block.next - 1;
+      out.push(renderList(block.node, `${keyPrefix}-l${out.length}`));
+      continue;
+    }
+
+    if (line.trim() === '') {
       flushParagraph();
     } else {
-      flushList();
       paragraph.push(line);
     }
   }
-  flushList();
   flushParagraph();
   return out;
 }

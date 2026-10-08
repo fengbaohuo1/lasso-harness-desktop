@@ -12,10 +12,38 @@ import type {
   RuntimeApprovalDto,
   RuntimeQuestionDto,
   SessionSummary,
+  SessionUsage,
 } from '../types';
 
 export function fetchSessions(): Promise<SessionSummary[]> {
   return apiRequest<SessionSummary[]>('/api/harness/console/sessions');
+}
+
+/** 重命名会话（F3 契约：PATCH，body {title}，data:{sessionId,title}）。 */
+export function renameSession(
+  sessionId: string,
+  title: string,
+): Promise<{ sessionId: string; title: string }> {
+  return apiRequest<{ sessionId: string; title: string }>(
+    `/api/harness/console/sessions/${encodeURIComponent(sessionId)}`,
+    'PATCH',
+    { title },
+  );
+}
+
+/** 删除会话（F3 契约：软删，事件文件保留）。 */
+export function deleteSession(sessionId: string): Promise<void> {
+  return apiRequest<void>(
+    `/api/harness/console/sessions/${encodeURIComponent(sessionId)}`,
+    'DELETE',
+  );
+}
+
+/** 会话用量（F6 契约：事件聚合，无 usage 时全 0）。 */
+export function fetchSessionUsage(sessionId: string): Promise<SessionUsage> {
+  return apiRequest<SessionUsage>(
+    `/api/harness/console/sessions/${encodeURIComponent(sessionId)}/usage`,
+  );
 }
 
 export function fetchSessionMessages(sessionId: string): Promise<ConsoleMessage[]> {

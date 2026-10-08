@@ -1,8 +1,10 @@
 /**
- * jnf-desktop 主容器（M7）：
+ * jnf-desktop 主容器（M7 + F 组）：
  *  - 启动链：invoke agent_status -> 未运行则 start_agent -> 轮询 health/status 直到就绪
- *  - 布局：顶栏（状态 + 当前模型 + 设置）| 左侧会话栏 | 主区（对话 + 输入）
- *  - 对话：消息流 + 输入框 + 发送 + 停止生成；流式期间轮询运行期审批（挂起-裁决）
+ *  - 布局：顶栏（状态 + 当前模型 + 主题切换 + 设置）| 左侧会话栏（可折叠）| 主区（对话 + 输入）
+ *  - 对话：消息流 + 输入框 + 发送/停止；流式期间轮询运行期审批（挂起-裁决）与提问（作答）
+ *  - F 组：主题三态、Composer 模型选择、会话重命名/删除/搜索/分组、全局快捷键、
+ *    toast、欢迎页、重新生成、About、用量徽标
  * 所有业务请求统一走 lib/agent-client 与 lib/console-client、lib/settings-client，
  * 组件内不直接 fetch / invoke。
  */
@@ -10,9 +12,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import Composer from './components/Composer';
+import type { ComposerModelOption } from './components/Composer';
 import ConversationView from './components/ConversationView';
+import type { QuickAction } from './components/ConversationView';
 import SettingsDialog from './components/SettingsDialog';
+import type { Tab } from './components/SettingsDialog';
 import Sidebar from './components/Sidebar';
+import ToastContainer from './components/ToastContainer';
+import { MonitorIcon, MoonIcon, SunIcon } from './components/icons';
 import {
   AgentApiError,
   AgentRunCancelledError,
@@ -25,14 +32,27 @@ import {
 } from './lib/agent-client';
 import {
   answerQuestion,
+  deleteSession,
   fetchPendingApprovals,
   fetchPendingQuestions,
   fetchSessionMessages,
+  fetchSessionUsage,
   fetchSessions,
+  renameSession,
   resolveApproval,
   toChatMessages,
 } from './lib/console-client';
 import { listModelChannels } from './lib/settings-client';
+import {
+  THEME_MODE_LABEL,
+  applyTheme,
+  loadThemeMode,
+  nextThemeMode,
+  saveThemeMode,
+  watchSystemTheme,
+} from './lib/theme';
+import type { ThemeMode } from './lib/theme';
+import { toast } from './lib/toast';
 import type {
   AgentStatus,
   ApprovalVerdict,
@@ -41,6 +61,7 @@ import type {
   RuntimeApprovalDto,
   RuntimeQuestionDto,
   SessionSummary,
+  SessionUsage,
   ToolCardState,
 } from './types';
 
@@ -73,25 +94,48 @@ export default function App(): ReactElement {
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
-  const [banner, setBanner] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<Tab>('models');
   const [agentId, setAgentId] = useState<string>(DEFAULT_AGENT_ID);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [approvals, setApprovals] = useState<RuntimeApprovalDto[]>([]);
   const [questions, setQuestions] = useState<RuntimeQuestionDto[]>([]);
   const [activeModel, setActiveModel] = useState<string | null>(null);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [modelOptions, setModelOptions] = useState<ComposerModelOption[]>([]);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [usage, setUsage] = useState<SessionUsage | null>(null);
+  const [focusToken, setFocusToken] = useState(0);
 
   const bootStartedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const agentIdRef = useRef(agentId);
   agentIdRef.current = agentId;
 
+  /* ----------------------------- F1 主题 ----------------------------- */
+
+  useEffect(() => {
+    applyTheme(themeMode);
+    saveThemeMode(themeMode);
+  }, [themeMode]);
+
+  useEffect(() => {
+    if (themeMode !== 'system') {
+      return;
+    }
+    return watchSystemTheme(() => applyTheme('system'));
+  }, [themeMode]);
+
+  const handleToggleTheme = useCallback(() => {
+    setThemeMode((prev) => nextThemeMode(prev));
+  }, []);
+
   /* ----------------------------- 启动链 ----------------------------- */
 
   const runBootChain = useCallback(async () => {
     setBoot({ phase: 'checking' });
-    setBanner(null);
     try {
       const status = await fetchAgentStatus();
       if (!status.running) {
@@ -115,7 +159,7 @@ export default function App(): ReactElement {
     void runBootChain();
   }, [runBootChain]);
 
-  /* ----------------------------- 侧栏/模型徽标数据 ----------------------------- */
+  /* ----------------------------- 侧栏/模型徽标/用量数据 ----------------------------- */
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -126,13 +170,36 @@ export default function App(): ReactElement {
     }
   }, []);
 
+  const refreshUsage = useCallback(async (id: string) => {
+    try {
+      setUsage(await fetchSessionUsage(id));
+    } catch {
+      setUsage(null);
+    }
+  }, []);
+
   const refreshModel = useCallback(async () => {
     try {
       const channels = await listModelChannels();
       const active = channels.find((c) => c.active);
       setActiveModel(active ? active.modelCode : null);
+      const seen = new Set<string>();
+      const options: ComposerModelOption[] = [];
+      for (const channel of channels) {
+        if (!channel.modelCode || seen.has(channel.modelCode)) {
+          continue;
+        }
+        seen.add(channel.modelCode);
+        options.push({
+          value: channel.modelCode,
+          label: `${channel.displayName || channel.channelCode} · ${channel.modelCode}`,
+          active: channel.active,
+        });
+      }
+      setModelOptions(options);
     } catch {
       setActiveModel(null);
+      setModelOptions([]);
     }
   }, []);
 
@@ -142,7 +209,17 @@ export default function App(): ReactElement {
     }
     void refreshSessions();
     void refreshModel();
-  }, [boot.phase, refreshSessions, refreshModel]);
+    void refreshUsage(agentId);
+  }, [boot.phase, refreshSessions, refreshModel, refreshUsage, agentId]);
+
+  // F3：30s 轻量轮询兜底（done 后另有主动刷新）
+  useEffect(() => {
+    if (boot.phase !== 'ready') {
+      return;
+    }
+    const timer = window.setInterval(() => void refreshSessions(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [boot.phase, refreshSessions]);
 
   /* ----------------------------- 运行期审批/提问轮询（挂起-裁决/作答） ----------------------------- */
 
@@ -173,19 +250,22 @@ export default function App(): ReactElement {
     };
   }, [boot.phase]);
 
-  const handleResolveApproval = useCallback((approvalId: string, verdict: ApprovalVerdict) => {
-    void resolveApproval(approvalId, verdict)
-      .catch((err) => setBanner(describeError(err)))
-      .finally(() => {
-        void fetchPendingApprovals()
-          .then(setApprovals)
-          .catch(() => undefined);
-      });
-  }, []);
+  const handleResolveApproval = useCallback(
+    (approvalId: string, verdict: ApprovalVerdict) => {
+      void resolveApproval(approvalId, verdict)
+        .catch((err) => toast(describeError(err)))
+        .finally(() => {
+          void fetchPendingApprovals()
+            .then(setApprovals)
+            .catch(() => undefined);
+        });
+    },
+    [],
+  );
 
   const handleAnswerQuestion = useCallback((questionId: string, answer: string) => {
     void answerQuestion(questionId, answer)
-      .catch((err) => setBanner(describeError(err)))
+      .catch((err) => toast(describeError(err)))
       .finally(() => {
         void fetchPendingQuestions()
           .then(setQuestions)
@@ -193,51 +273,105 @@ export default function App(): ReactElement {
       });
   }, []);
 
-  /* ----------------------------- 会话切换 ----------------------------- */
+  /* ----------------------------- 会话切换 / 管理 ----------------------------- */
 
-  const loadSession = useCallback(async (id: string) => {
-    try {
-      const history = await fetchSessionMessages(id);
-      setMessages(toChatMessages(history, id));
-    } catch (err) {
-      setBanner(describeError(err));
-    }
-  }, []);
+  const loadSession = useCallback(
+    async (id: string) => {
+      try {
+        const history = await fetchSessionMessages(id);
+        setMessages(toChatMessages(history, id));
+      } catch (err) {
+        toast(describeError(err));
+      }
+      void refreshUsage(id);
+    },
+    [refreshUsage],
+  );
 
   const handleSelectSession = useCallback(
     (id: string) => {
-      if (id === agentId) {
+      if (id === agentIdRef.current) {
         return;
       }
       abortRef.current?.abort();
-      void cancelAgentRun(agentId).catch(() => undefined);
+      void cancelAgentRun(agentIdRef.current).catch(() => undefined);
       setStreaming(false);
       setAgentId(id);
       setMessages([]);
       void loadSession(id);
     },
-    [agentId, loadSession],
+    [loadSession],
   );
 
   const handleNewSession = useCallback(() => {
     abortRef.current?.abort();
-    void cancelAgentRun(agentId).catch(() => undefined);
+    void cancelAgentRun(agentIdRef.current).catch(() => undefined);
     setStreaming(false);
     const id = `s-${Date.now().toString(36)}`;
     setAgentId(id);
     setMessages([]);
-  }, [agentId]);
+    setUsage(null);
+    // F3：新对话立即出现在列表（本地占位，done 后由 refreshSessions 对账）
+    setSessions((prev) => [
+      {
+        sessionId: id,
+        events: 0,
+        eventCount: 0,
+        title: null,
+        createdAt: Date.now(),
+        lastEventAt: Date.now(),
+      },
+      ...prev.filter((session) => session.sessionId !== id),
+    ]);
+    setFocusToken((prev) => prev + 1);
+  }, []);
 
-  /* ----------------------------- 发送 / 停止 ----------------------------- */
+  const handleRenameSession = useCallback(
+    (id: string, title: string) => {
+      void renameSession(id, title)
+        .then(() => {
+          toast('会话已重命名', 'success');
+          return refreshSessions();
+        })
+        .catch((err) => toast(describeError(err)));
+    },
+    [refreshSessions],
+  );
+
+  const handleDeleteSession = useCallback(
+    (id: string) => {
+      void deleteSession(id)
+        .then(async () => {
+          toast('会话已删除', 'success');
+          const list = await fetchSessions();
+          setSessions(list);
+          if (id === agentIdRef.current) {
+            // F3：删除当前会话后自动切到下一个或新建
+            const next = list[0];
+            if (next) {
+              setAgentId(next.sessionId);
+              setMessages([]);
+              void loadSession(next.sessionId);
+            } else {
+              handleNewSession();
+            }
+          }
+        })
+        .catch((err) => toast(describeError(err)));
+    },
+    [loadSession, handleNewSession],
+  );
+
+  /* ----------------------------- 发送 / 停止 / 重新生成 ----------------------------- */
 
   const handleSend = useCallback(
-    async (raw: string): Promise<void> => {
+    async (raw: string, options?: { regenerating?: boolean }): Promise<void> => {
       const text = raw.trim();
       if (!text || streaming) {
         return;
       }
+      const regenerating = options?.regenerating === true;
 
-      setBanner(null);
       setPromptHistory((prev) => [...prev.filter((item) => item !== text), text].slice(-50));
       const userMessage: ChatMessage = {
         id: uid(),
@@ -256,8 +390,12 @@ export default function App(): ReactElement {
         segments: [],
         status: 'streaming',
         createdAt: Date.now(),
+        regenerating,
       };
-      setMessages((prev) => [...prev, userMessage, assistantMessage]);
+      // 重新生成：复用原用户气泡，只追加新的回答（作为新 turn）
+      setMessages((prev) =>
+        regenerating ? [...prev, assistantMessage] : [...prev, userMessage, assistantMessage],
+      );
       setStreaming(true);
 
       const controller = new AbortController();
@@ -303,7 +441,12 @@ export default function App(): ReactElement {
 
       try {
         await streamAgentMessage(
-          { agentId: agentIdRef.current, message: text },
+          {
+            agentId: agentIdRef.current,
+            message: text,
+            // F2：per-message model 透传（空 = 跟随生效渠道）
+            model: selectedModel || undefined,
+          },
           {
             onChunk: ({ content }) => {
               if (content) {
@@ -357,7 +500,7 @@ export default function App(): ReactElement {
               }));
             },
             onError: (e) => {
-              setBanner(`[${e.code}] ${e.message}`);
+              toast(`[${e.code}] ${e.message}`);
             },
           },
           { signal: controller.signal },
@@ -370,12 +513,13 @@ export default function App(): ReactElement {
         } else {
           const message = describeError(err);
           patchAssistant(() => ({ status: 'error', error: message }));
-          setBanner(message);
+          toast(message);
         }
       } finally {
         setStreaming(false);
         abortRef.current = null;
         void refreshSessions();
+        void refreshUsage(agentIdRef.current);
         void fetchPendingApprovals()
           .then(setApprovals)
           .catch(() => undefined);
@@ -384,7 +528,7 @@ export default function App(): ReactElement {
           .catch(() => undefined);
       }
     },
-    [streaming, refreshSessions],
+    [streaming, selectedModel, refreshSessions, refreshUsage],
   );
 
   const handleStop = useCallback(() => {
@@ -392,6 +536,67 @@ export default function App(): ReactElement {
     abortRef.current?.abort();
     void cancelAgentRun(agentIdRef.current).catch(() => undefined);
   }, []);
+
+  /** F4：重新生成——移除旧回答，复用原用户气泡重发（新 turn），操作行带 spinner。 */
+  const handleRegenerate = useCallback(() => {
+    if (streaming || messages.length === 0) {
+      return;
+    }
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant' || last.status === 'streaming') {
+      return;
+    }
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    if (!lastUser?.text) {
+      return;
+    }
+    setMessages((prev) => prev.filter((m) => m.id !== last.id));
+    void handleSend(lastUser.text, { regenerating: true });
+  }, [streaming, messages, handleSend]);
+
+  /* ----------------------------- F4 快捷键 / 快捷入口 ----------------------------- */
+
+  const handleQuickAction = useCallback((action: QuickAction) => {
+    if (action === 'chat') {
+      setFocusToken((prev) => prev + 1);
+      return;
+    }
+    setSettingsTab(action === 'models' ? 'models' : action === 'plugins' ? 'plugins' : 'about');
+    setShowSettings(true);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.defaultPrevented) {
+        return;
+      }
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && !e.shiftKey && !e.altKey && (e.key === 'n' || e.key === 'N')) {
+        e.preventDefault();
+        handleNewSession();
+        return;
+      }
+      if (ctrl && e.key === ',') {
+        e.preventDefault();
+        setShowSettings((prev) => !prev);
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (showSettings) {
+          e.preventDefault();
+          setShowSettings(false);
+          return;
+        }
+        if (streaming) {
+          // 生成中且无弹层：Esc 停止生成（侧栏重命名输入已吞掉自己的 Esc）
+          e.preventDefault();
+          handleStop();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showSettings, streaming, handleNewSession, handleStop]);
 
   /* ----------------------------- 渲染 ----------------------------- */
 
@@ -426,6 +631,22 @@ export default function App(): ReactElement {
               {activeModel}
             </span>
           ) : null}
+          <button
+            type="button"
+            className="icon-btn theme-toggle"
+            title={`主题：${THEME_MODE_LABEL[themeMode]}（点击切换）`}
+            aria-label={`主题：${THEME_MODE_LABEL[themeMode]}（点击切换）`}
+            onClick={handleToggleTheme}
+          >
+            {themeMode === 'system' ? (
+              <MonitorIcon />
+            ) : themeMode === 'dark' ? (
+              <MoonIcon />
+            ) : (
+              <SunIcon />
+            )}
+            <span>{THEME_MODE_LABEL[themeMode]}</span>
+          </button>
           {bootReady ? (
             <button type="button" className="btn btn--small" onClick={() => setShowSettings(true)}>
               设置
@@ -436,6 +657,7 @@ export default function App(): ReactElement {
 
       {showSettings && bootReady ? (
         <SettingsDialog
+          initialTab={settingsTab}
           onClose={() => {
             setShowSettings(false);
             void refreshModel();
@@ -463,18 +685,14 @@ export default function App(): ReactElement {
           <Sidebar
             sessions={sessions}
             activeId={agentId}
+            collapsed={sidebarCollapsed}
             onSelect={handleSelectSession}
             onNew={handleNewSession}
+            onRename={handleRenameSession}
+            onDelete={handleDeleteSession}
+            onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
           />
           <main className="app-main">
-            {banner ? (
-              <div className="banner banner--error" role="alert">
-                <span>{banner}</span>
-                <button type="button" className="banner-close" onClick={() => setBanner(null)}>
-                  ×
-                </button>
-              </div>
-            ) : null}
             <ConversationView
               messages={messages}
               streaming={streaming}
@@ -482,17 +700,25 @@ export default function App(): ReactElement {
               questions={questions}
               onResolveApproval={handleResolveApproval}
               onAnswerQuestion={handleAnswerQuestion}
+              onRegenerate={handleRegenerate}
+              onQuickAction={handleQuickAction}
             />
             <Composer
               disabled={!bootReady}
               streaming={streaming}
               history={promptHistory}
+              models={modelOptions}
+              selectedModel={selectedModel}
+              onSelectModel={setSelectedModel}
+              usageTotal={usage?.totalTokens ?? null}
+              focusToken={focusToken}
               onSend={handleSend}
               onStop={handleStop}
             />
           </main>
         </div>
       )}
+      <ToastContainer />
     </div>
   );
 }

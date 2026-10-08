@@ -1,47 +1,59 @@
 /**
- * 设置对话框（SD6）：两页签——模型渠道（M6）/ 插件管理（P4）。
+ * 设置对话框（SD6 + F4）：三页签——模型渠道（M6）/ 插件管理（P4）/ 关于（F4）。
  */
 
 import { useState } from 'react';
 import type { ReactElement } from 'react';
+import AboutPanel from './AboutPanel';
 import ModelSettingsPanel from './ModelSettingsPanel';
 import PluginSettingsPanel from './PluginSettingsPanel';
 
 export interface SettingsDialogProps {
   onClose: () => void;
+  /** 初始页签（欢迎页快捷入口直达用），默认模型渠道。 */
+  initialTab?: Tab;
 }
 
-type Tab = 'models' | 'plugins';
+export type Tab = 'models' | 'plugins' | 'about';
 
-export default function SettingsDialog({ onClose }: SettingsDialogProps): ReactElement {
-  const [tab, setTab] = useState<Tab>('models');
+const TABS: Array<[Tab, string]> = [
+  ['models', '模型渠道'],
+  ['plugins', '插件管理'],
+  ['about', '关于'],
+];
+
+export default function SettingsDialog({
+  onClose,
+  initialTab = 'models',
+}: SettingsDialogProps): ReactElement {
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   return (
     <div className="settings-overlay" role="dialog" aria-modal="true">
       <div className="settings-dialog">
         <header className="settings-dialog__header">
           <div className="settings-tabs">
-            <button
-              type="button"
-              className={tab === 'models' ? 'settings-tab settings-tab--active' : 'settings-tab'}
-              onClick={() => setTab('models')}
-            >
-              模型渠道
-            </button>
-            <button
-              type="button"
-              className={tab === 'plugins' ? 'settings-tab settings-tab--active' : 'settings-tab'}
-              onClick={() => setTab('plugins')}
-            >
-              插件管理
-            </button>
+            {TABS.map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={
+                  tab === key ? 'settings-tab settings-tab--active' : 'settings-tab'
+                }
+                onClick={() => setTab(key)}
+              >
+                {label}
+              </button>
+            ))}
           </div>
           <button type="button" className="btn btn--small" onClick={onClose}>
             关闭
           </button>
         </header>
         <div className="settings-dialog__body">
-          {tab === 'models' ? <ModelSettingsPanel /> : <PluginSettingsPanel />}
+          {tab === 'models' ? <ModelSettingsPanel /> : null}
+          {tab === 'plugins' ? <PluginSettingsPanel /> : null}
+          {tab === 'about' ? <AboutPanel /> : null}
         </div>
       </div>
     </div>

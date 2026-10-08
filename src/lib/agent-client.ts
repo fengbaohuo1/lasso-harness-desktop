@@ -176,13 +176,32 @@ async function requestEnvelope<T>(path: string, init?: RequestInit): Promise<T> 
 /** 通用 REST 调用（信封解包 + 双通道传输；设置页等非对话流量统一走这里）。 */
 export function apiRequest<T>(
   path: string,
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
   body?: unknown,
 ): Promise<T> {
   return requestEnvelope<T>(path, {
     method,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+}
+
+/**
+ * GET /actuator/info（非信封响应）：取内核版本（build.version）。
+ * 端点不存在/无版本信息时返回 null（About 页省略该行），不抛错。
+ */
+export async function fetchKernelInfo(): Promise<string | null> {
+  const cfg = requireConfig();
+  try {
+    const response = await httpFetch(`${cfg.baseUrl}/actuator/info`, {
+      method: 'GET',
+      headers: { 'X-API-Key': cfg.apiKey },
+    });
+    const raw = await response.text();
+    const parsed = JSON.parse(raw) as { build?: { version?: string } };
+    return parsed?.build?.version ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** POST /api/agent/message（非流式）。 */
