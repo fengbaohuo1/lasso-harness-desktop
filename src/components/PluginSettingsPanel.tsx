@@ -1,158 +1,39 @@
 /**
- * 设置 · 插件管理面板（P4）：
- * 已安装（启用/停用/重载/卸载/配置）+ 可安装目录（catalog 一键安装）+ 配置 KV 编辑。
+ * 设置 · 插件管理面板（P4 + U3）：
+ * 已安装（启用/停用/重载/卸载/配置）+ 可安装目录（catalog 一键安装）。
+ * U3：点「配置」进入该插件**独立配置页**（PluginConfigPage：settingsPage 表单 / KV 回退）；
+ * hasUi 徽标 + 「重载插件 UI」（reloadPluginUi 免重启重拉清单）；
+ * reload/enable/disable 成功后自动刷新 UI 清单（SD5）。
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import {
   activatePlugin,
-  deletePluginConfigKey,
   disablePlugin,
   fetchPluginCatalog,
-  getPluginConfig,
   installPlugin,
   listPlugins,
   reloadPlugin,
-  savePluginConfig,
   uninstallPlugin,
 } from '../lib/settings-client';
 import type { PluginCatalogItem, PluginItem } from '../lib/settings-client';
-
-interface ConfigRow {
-  key: string;
-  value: string;
-}
+import { loadPluginUi, reloadPluginUi, usePluginUiMap } from '../lib/plugin-ui';
+import { toast } from '../lib/toast';
+import PluginConfigPage from './PluginConfigPage';
 
 function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function PluginConfigEditor({
-  pluginId,
-  onClose,
-}: {
-  pluginId: string;
-  onClose: () => void;
-}): ReactElement {
-  const [rows, setRows] = useState<ConfigRow[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  useEffect(() => {
-    void getPluginConfig(pluginId)
-      .then((config) => setRows(Object.entries(config).map(([key, value]) => ({ key, value }))))
-      .catch((err) => setError(describeError(err)));
-  }, [pluginId]);
-
-  const handleSave = async (): Promise<void> => {
-    setBusy(true);
-    setError(null);
-    try {
-      const config: Record<string, string> = {};
-      for (const row of rows) {
-        if (row.key.trim() !== '') {
-          config[row.key.trim()] = row.value;
-        }
-      }
-      await savePluginConfig(pluginId, config);
-      setNotice('配置已保存（持久化）');
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleDeleteRow = async (key: string): Promise<void> => {
-    setRows((prev) => prev.filter((row) => row.key !== key));
-    if (key.trim() !== '') {
-      try {
-        await deletePluginConfigKey(pluginId, key.trim());
-      } catch (err) {
-        setError(describeError(err));
-      }
-    }
-  };
-
-  return (
-    <div className="settings-form">
-      <h3>
-        配置 · {pluginId}
-        <button type="button" className="btn btn--small" onClick={onClose}>
-          收起
-        </button>
-      </h3>
-      {error ? <div className="banner banner--error">{error}</div> : null}
-      {notice ? <div className="banner banner--info">{notice}</div> : null}
-      <table className="settings-table">
-        <thead>
-          <tr>
-            <th>键</th>
-            <th>值</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={`${row.key}-${index}`}>
-              <td>
-                <input
-                  value={row.key}
-                  onChange={(e) =>
-                    setRows((prev) =>
-                      prev.map((r, i) => (i === index ? { ...r, key: e.target.value } : r)),
-                    )
-                  }
-                />
-              </td>
-              <td>
-                <input
-                  value={row.value}
-                  onChange={(e) =>
-                    setRows((prev) =>
-                      prev.map((r, i) => (i === index ? { ...r, value: e.target.value } : r)),
-                    )
-                  }
-                />
-              </td>
-              <td>
-                <button
-                  type="button"
-                  className="btn btn--small btn--danger"
-                  onClick={() => void handleDeleteRow(row.key)}
-                >
-                  删除
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="settings-form__actions">
-        <button
-          type="button"
-          className="btn btn--small"
-          onClick={() => setRows((prev) => [...prev, { key: '', value: '' }])}
-        >
-          加一行
-        </button>
-        <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void handleSave()}>
-          保存配置
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function PluginSettingsPanel(): ReactElement {
   const [plugins, setPlugins] = useState<PluginItem[]>([]);
   const [catalog, setCatalog] = useState<PluginCatalogItem[]>([]);
-  const [configFor, setConfigFor] = useState<string | null>(null);
+  const [configFor, setConfigFor] = useState<PluginItem | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const uiMap = usePluginUiMap();
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -166,6 +47,7 @@ export default function PluginSettingsPanel(): ReactElement {
 
   useEffect(() => {
     void refresh();
+    void loadPluginUi().catch(() => undefined);
   }, [refresh]);
 
   const run = (action: () => Promise<unknown>, okMessage: string): void => {
@@ -177,15 +59,53 @@ export default function PluginSettingsPanel(): ReactElement {
       .finally(() => {
         setBusy(false);
         void refresh();
+        // 启停/重载可能改变前端贡献面 → 自动刷新 UI 清单（SD5）
+        void loadPluginUi(true).catch(() => undefined);
       });
   };
+
+  const handleReloadUi = (): void => {
+    setBusy(true);
+    void reloadPluginUi()
+      .then(() => toast('插件 UI 清单已重载', 'success'))
+      .catch((err) => toast(`重载失败：${describeError(err)}`, 'error'))
+      .finally(() => setBusy(false));
+  };
+
+  // U3：独立配置页视图（返回按钮回列表）
+  if (configFor) {
+    return (
+      <div className="settings-panel">
+        <PluginConfigPage
+          plugin={configFor}
+          manifest={uiMap.get(configFor.pluginId) ?? null}
+          onBack={() => {
+            setConfigFor(null);
+            void refresh();
+          }}
+          onSaved={() => void refresh()}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="settings-panel">
       {error ? <div className="banner banner--error">{error}</div> : null}
       {notice ? <div className="banner banner--info">{notice}</div> : null}
 
-      <h3>已安装</h3>
+      <div className="settings-panel__toolbar">
+        <h3>已安装</h3>
+        <button
+          type="button"
+          className="btn btn--small"
+          disabled={busy}
+          title="重新拉取插件 UI 贡献清单（免重启）"
+          onClick={handleReloadUi}
+        >
+          重载插件 UI
+        </button>
+      </div>
       <table className="settings-table">
         <thead>
           <tr>
@@ -205,6 +125,11 @@ export default function PluginSettingsPanel(): ReactElement {
                 {plugin.displayName && plugin.displayName !== plugin.pluginId
                   ? ` · ${plugin.displayName}`
                   : ''}
+                {plugin.hasUi ? (
+                  <span className="badge badge--active settings-table__ui-badge" title="声明了 UI 贡献清单（工具卡渲染/配置页面）">
+                    UI
+                  </span>
+                ) : null}
               </td>
               <td>{plugin.pluginVersion}</td>
               <td>{plugin.runtimeType}</td>
@@ -253,7 +178,8 @@ export default function PluginSettingsPanel(): ReactElement {
                 <button
                   type="button"
                   className="btn btn--small"
-                  onClick={() => setConfigFor(configFor === plugin.pluginId ? null : plugin.pluginId)}
+                  title="打开该插件的独立配置页面"
+                  onClick={() => setConfigFor(plugin)}
                 >
                   配置
                 </button>
@@ -270,8 +196,6 @@ export default function PluginSettingsPanel(): ReactElement {
           ))}
         </tbody>
       </table>
-
-      {configFor ? <PluginConfigEditor pluginId={configFor} onClose={() => setConfigFor(null)} /> : null}
 
       <h3>可安装（插件目录）</h3>
       <table className="settings-table">

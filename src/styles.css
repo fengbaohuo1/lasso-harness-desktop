@@ -1856,3 +1856,223 @@ body {
 .md-ol {
   list-style: decimal;
 }
+
+/* ----------------------------- 第五阶段：插件 UI 贡献 ----------------------------- */
+
+/* 工具卡渲染块（U2） */
+.tool-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-block__text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.tool-block__kv,
+.tool-block__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.tool-block__kv th,
+.tool-block__kv td,
+.tool-block__table th,
+.tool-block__table td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.tool-block__kv th {
+  width: 30%;
+  color: var(--text-dim);
+  font-weight: 600;
+  background: var(--bg-input);
+}
+
+.tool-block__table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  background: var(--bg-input);
+}
+
+.tool-block__lang {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.tool-block__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 插件独立配置页（U3） */
+.plugin-config-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.plugin-config-page__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.plugin-config-page__title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.plugin-config-page__name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.plugin-config-page__meta {
+  font-size: 12px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+
+.plugin-config-page__desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-dim);
+}
+
+.plugin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.plugin-form__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+}
+
+.plugin-form__section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.plugin-form__row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.plugin-form__label {
+  padding-top: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.plugin-form__required {
+  margin-left: 2px;
+  color: var(--danger);
+  font-style: normal;
+}
+
+.plugin-form__control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plugin-form__control input[type='text'],
+.plugin-form__control input[type='password'],
+.plugin-form__control input[type='number'],
+.plugin-form__control select,
+.plugin-form__control textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.plugin-form__row--invalid .plugin-form__control input,
+.plugin-form__row--invalid .plugin-form__control select,
+.plugin-form__row--invalid .plugin-form__control textarea {
+  border-color: var(--danger);
+}
+
+.plugin-form__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.plugin-form__help {
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+
+.plugin-form__error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.plugin-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 插件面板工具条与 UI 徽标 */
+.settings-panel__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-panel__toolbar h3 {
+  margin: 0;
+}
+
+.settings-table__ui-badge {
+  margin-left: 6px;
+}

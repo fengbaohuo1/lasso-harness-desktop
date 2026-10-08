@@ -4,11 +4,20 @@
  * 助手正文走 markdown-lite（表格/代码块带复制）。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import MarkdownLite from '../lib/markdown-lite';
+import {
+  findToolRenderer,
+  parseToolResult,
+  renderTemplate,
+  usePluginUiMap,
+  visibleBlocks,
+  type RenderContext,
+} from '../lib/plugin-ui';
 import ApprovalCard from './ApprovalCard';
 import QuestionCard from './QuestionCard';
+import ToolCardBlocks from './ToolCardBlocks';
 import { RefreshIcon } from './icons';
 import type {
   ApprovalVerdict,
@@ -83,9 +92,17 @@ function CopyTextButton({ text }: { text: string }): ReactElement | null {
   );
 }
 
-/** 工具卡片（M8 #1）：默认折叠，头部一行摘要，点击展开参数/结果。 */
+/** 工具卡片（M8 #1）：默认折叠，头部一行摘要，点击展开参数/结果。
+ * U2：命中插件 toolRenderer 的工具按 plugin-ui.json blocks 渲染
+ * （折叠头用 title/summary 模板结果，展开渲 blocks；取不到回退默认视图）。 */
 function ToolCard({ card }: { card: ToolCardState }): ReactElement {
   const [expanded, setExpanded] = useState(false);
+  const uiMap = usePluginUiMap();
+  const match = findToolRenderer(uiMap, card.toolName);
+  const ctx: RenderContext = useMemo(
+    () => ({ args: card.args, result: parseToolResult(card.result) }),
+    [card.args, card.result],
+  );
   const argsText = formatValue(card.args);
   const resultText = card.error ? card.error : formatValue(card.result);
   const statusLabel: Record<ToolCardState['status'], string> = {
@@ -93,7 +110,12 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
     success: '成功',
     error: '失败',
   };
-  const summary = (resultText || argsText || '').split('\n')[0].slice(0, 60);
+  const fallbackSummary = (resultText || argsText || '').split('\n')[0].slice(0, 60);
+  const renderedTitle = match ? renderTemplate(match.renderer.title ?? '', ctx) : '';
+  const renderedSummary = match ? renderTemplate(match.renderer.summary ?? '', ctx) : '';
+  const displayName = renderedTitle || card.toolName;
+  const summary = renderedSummary || fallbackSummary;
+  const rendererVisible = match ? visibleBlocks(match.renderer.blocks ?? [], ctx).length > 0 : false;
 
   return (
     <div className={`tool-card tool-card--${card.status}`}>
@@ -105,7 +127,7 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
         <span className={`tool-card__icon tool-card__icon--${card.status}`} aria-hidden="true">
           {card.status === 'running' ? '⚙' : card.status === 'success' ? '✓' : '✕'}
         </span>
-        <span className="tool-card__name">{card.toolName}</span>
+        <span className="tool-card__name">{displayName}</span>
         <span className={`tool-card__status tool-card__status--${card.status}`}>
           {statusLabel[card.status]}
         </span>
@@ -116,17 +138,24 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
       </button>
       {expanded ? (
         <div>
-          {argsText ? (
-            <div className="tool-card__section">
-              <div className="tool-card__label">参数</div>
-              <pre className="tool-card__pre">{argsText}</pre>
-            </div>
+          {match && rendererVisible ? (
+            <ToolCardBlocks blocks={match.renderer.blocks ?? []} pluginId={match.pluginId} ctx={ctx} />
           ) : null}
-          {resultText ? (
-            <div className="tool-card__section">
-              <div className="tool-card__label">{card.error ? '错误' : '结果'}</div>
-              <pre className="tool-card__pre">{resultText}</pre>
-            </div>
+          {!match || !rendererVisible ? (
+            <>
+              {argsText ? (
+                <div className="tool-card__section">
+                  <div className="tool-card__label">参数</div>
+                  <pre className="tool-card__pre">{argsText}</pre>
+                </div>
+              ) : null}
+              {resultText ? (
+                <div className="tool-card__section">
+                  <div className="tool-card__label">{card.error ? '错误' : '结果'}</div>
+                  <pre className="tool-card__pre">{resultText}</pre>
+                </div>
+              ) : null}
+            </>
           ) : null}
         </div>
       ) : null}

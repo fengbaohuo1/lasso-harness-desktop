@@ -44,6 +44,8 @@ export interface PluginItem {
   entrypoint: string;
   status: string;
   runtimeState: string;
+  /** 第五阶段：是否声明了前端贡献清单（META-INF/plugin-ui.json）。 */
+  hasUi?: boolean;
 }
 
 export interface PluginCatalogItem {

@@ -252,3 +252,90 @@ export interface RuntimeQuestionDto {
 export type MsgSegment =
   | { kind: 'text'; text: string }
   | { kind: 'card'; card: ToolCardState };
+
+/* ----------------------- 第五阶段：插件 UI 贡献清单（schemaVersion 1） ----------------------- */
+
+/** 清单支持的最高 schemaVersion；更高版本只提示「请升级桌面端」不硬渲。 */
+export const PLUGIN_UI_SCHEMA_VERSION = 1;
+
+/** settingsPage 字段类型（v1）。 */
+export type PluginUiFieldType = 'text' | 'password' | 'number' | 'checkbox' | 'select' | 'textarea';
+
+/** select 选项。 */
+export interface PluginUiFieldOption {
+  value: string;
+  label: string;
+}
+
+/** settingsPage 表单字段；值与插件配置 KV 互转（number→数字串、checkbox→"true"/"false"）。 */
+export interface PluginUiField {
+  key: string;
+  label: string;
+  type: PluginUiFieldType;
+  placeholder?: string;
+  help?: string;
+  required?: boolean;
+  default?: string | number | boolean;
+  min?: number;
+  max?: number;
+  options?: PluginUiFieldOption[];
+}
+
+/** settingsPage 分组。 */
+export interface PluginUiSection {
+  title?: string;
+  fields: PluginUiField[];
+}
+
+/** 动作按钮（工具卡 actions 与 settingsPage.actions 共用）。
+ *  bodyFrom：点路径（如 "result.meta"）取对象做请求体；settingsPage 里 "form" = 当前表单全部值。 */
+export interface PluginUiAction {
+  label: string;
+  method: string;
+  path: string;
+  bodyFrom?: string;
+  confirm?: string;
+}
+
+/** table 块列定义。 */
+export interface PluginUiColumn {
+  key: string;
+  label: string;
+}
+
+/** 工具卡渲染块（source 为点路径：args.x.y / result.x.y；取不到该块隐藏）。 */
+export type PluginUiBlock =
+  | { type: 'text'; source: string; label?: string }
+  | { type: 'kv'; source: string; label?: string }
+  | { type: 'table'; source: string; label?: string; columns: PluginUiColumn[] }
+  | { type: 'code'; source: string; label?: string; language?: string }
+  | { type: 'json'; source: string; label?: string }
+  | { type: 'actions'; label?: string; items: PluginUiAction[] };
+
+/** 工具渲染器（title/summary 为模板：{args.x}/{result.x}，取不到留空）。 */
+export interface PluginToolRenderer {
+  title?: string;
+  summary?: string;
+  blocks?: PluginUiBlock[];
+}
+
+/** 插件独立配置页面（U3：无此节回退 KV 编辑器）。 */
+export interface PluginSettingsPage {
+  title?: string;
+  description?: string;
+  sections?: PluginUiSection[];
+  actions?: PluginUiAction[];
+}
+
+/** META-INF/plugin-ui.json（SD1 统一插件包的前端贡献清单）。 */
+export interface PluginUiManifest {
+  schemaVersion: number;
+  toolRenderers?: Record<string, PluginToolRenderer>;
+  settingsPage?: PluginSettingsPage;
+}
+
+/** GET /api/harness/plugins/ui 条目（仅 ACTIVE）。 */
+export interface PluginUiEntry {
+  pluginId: string;
+  ui: PluginUiManifest | null;
+}
