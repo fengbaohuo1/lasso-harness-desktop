@@ -34,10 +34,46 @@ export interface AgentMessageRequest {
   agentId: string;
   message: string;
   model?: string;
+  /** A4：智能体画像码（per-message，空 = default 画像）。 */
+  profile?: string;
   maxTokens?: number;
   temperature?: number;
   cwd?: string;
 }
+
+/** 智能体画像（A1/A4）：按场景裁运行开销的参数集（GET /api/harness/profiles）。 */
+export interface AgentProfile {
+  profileCode: string;
+  displayName: string;
+  maxStepsPerTurn: number;
+  maxTokenContinuations: number;
+  contextTokenBudget: number;
+  keepRecentMessages: number;
+  compactionThresholdTokens: number;
+  maxTokens: number | null;
+  temperature: number | null;
+  /** 工具画像码（接 R5 工具目录画像白名单，决定模型可见工具面）。 */
+  toolProfile: string;
+  /** 追加到系统提示词的场景指令（≤4000 字）。 */
+  promptExtra: string | null;
+}
+
+/** PUT /api/harness/profiles/{code} 的部分字段（缺省沿用原值）。 */
+export type AgentProfileInput = Partial<
+  Pick<
+    AgentProfile,
+    | 'displayName'
+    | 'maxStepsPerTurn'
+    | 'maxTokenContinuations'
+    | 'contextTokenBudget'
+    | 'keepRecentMessages'
+    | 'compactionThresholdTokens'
+    | 'maxTokens'
+    | 'temperature'
+    | 'toolProfile'
+    | 'promptExtra'
+  >
+>;
 
 /** done / REST 响应中的工具调用条目。 */
 export interface ToolCallDto {

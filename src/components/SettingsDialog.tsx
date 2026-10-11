@@ -1,5 +1,5 @@
 /**
- * 设置对话框（SD6 + F4）：三页签——模型渠道（M6）/ 插件管理（P4）/ 关于（F4）。
+ * 设置对话框（SD6 + F4 + A4）：四页签——模型渠道（M6）/ 智能体画像（A4）/ 插件管理（P4）/ 关于（F4）。
  */
 
 import { useState } from 'react';
@@ -7,6 +7,7 @@ import type { ReactElement } from 'react';
 import AboutPanel from './AboutPanel';
 import ModelSettingsPanel from './ModelSettingsPanel';
 import PluginSettingsPanel from './PluginSettingsPanel';
+import ProfileSettingsPanel from './ProfileSettingsPanel';
 
 export interface SettingsDialogProps {
   onClose: () => void;
@@ -14,10 +15,11 @@ export interface SettingsDialogProps {
   initialTab?: Tab;
 }
 
-export type Tab = 'models' | 'plugins' | 'about';
+export type Tab = 'models' | 'profiles' | 'plugins' | 'about';
 
 const TABS: Array<[Tab, string]> = [
   ['models', '模型渠道'],
+  ['profiles', '智能体画像'],
   ['plugins', '插件管理'],
   ['about', '关于'],
 ];
@@ -52,6 +54,7 @@ export default function SettingsDialog({
         </header>
         <div className="settings-dialog__body">
           {tab === 'models' ? <ModelSettingsPanel /> : null}
+          {tab === 'profiles' ? <ProfileSettingsPanel /> : null}
           {tab === 'plugins' ? <PluginSettingsPanel /> : null}
           {tab === 'about' ? <AboutPanel /> : null}
         </div>

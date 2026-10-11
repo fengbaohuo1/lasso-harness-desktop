@@ -19,6 +19,14 @@ export interface ComposerModelOption {
   active?: boolean;
 }
 
+/** 画像选项（数据源 GET /api/harness/profiles，A4）。 */
+export interface ComposerProfileOption {
+  /** 传给 POST /api/agent/stream 的 profile 字段；空串 = 默认画像（default）。 */
+  value: string;
+  /** 展示名「名称（编码）」。 */
+  label: string;
+}
+
 export interface ComposerProps {
   /** 启动链未就绪时禁用输入。 */
   disabled: boolean;
@@ -31,6 +39,11 @@ export interface ComposerProps {
   /** 当前选择的 model 值；'' = 默认。 */
   selectedModel: string;
   onSelectModel: (model: string) => void;
+  /** 画像选项列表（首项由本组件补「默认画像」，A4）。 */
+  profiles?: ComposerProfileOption[];
+  /** 当前选择的画像码；'' = 默认画像。 */
+  selectedProfile?: string;
+  onSelectProfile?: (profile: string) => void;
   /** 会话累计 tokens（F6）；0/undefined 隐藏徽标。 */
   usageTotal?: number | null;
   /** 焦点令牌：变化时聚焦输入框（欢迎页快捷入口用）。 */
@@ -48,6 +61,9 @@ export default function Composer({
   models,
   selectedModel,
   onSelectModel,
+  profiles = [],
+  selectedProfile = '',
+  onSelectProfile,
   usageTotal,
   focusToken = 0,
   onSend,
@@ -145,6 +161,22 @@ export default function Composer({
             </option>
           ))}
         </select>
+        {onSelectProfile ? (
+          <select
+            className="composer__profile"
+            value={selectedProfile}
+            aria-label="选择智能体画像"
+            title="选择本次对话使用的画像：按场景裁步数/预算/工具面/提示词（默认 default）"
+            onChange={(e) => onSelectProfile(e.target.value)}
+          >
+            <option value="">默认画像（default）</option>
+            {profiles.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
         {usageTotal && usageTotal > 0 ? (
           <span className="composer__tokens" title="本会话累计 token 用量（事件聚合）">
             tokens 累计 {usageTotal.toLocaleString()}

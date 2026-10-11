@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import Composer from './components/Composer';
-import type { ComposerModelOption } from './components/Composer';
+import type { ComposerModelOption, ComposerProfileOption } from './components/Composer';
 import ConversationView from './components/ConversationView';
 import type { QuickAction } from './components/ConversationView';
 import SettingsDialog from './components/SettingsDialog';
@@ -42,7 +42,7 @@ import {
   resolveApproval,
   toChatMessages,
 } from './lib/console-client';
-import { listModelChannels } from './lib/settings-client';
+import { listModelChannels, listProfiles } from './lib/settings-client';
 import {
   THEME_MODE_LABEL,
   applyTheme,
@@ -106,6 +106,8 @@ export default function App(): ReactElement {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [modelOptions, setModelOptions] = useState<ComposerModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
+  const [profileOptions, setProfileOptions] = useState<ComposerProfileOption[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState('');
   const [usage, setUsage] = useState<SessionUsage | null>(null);
   const [focusToken, setFocusToken] = useState(0);
 
@@ -203,14 +205,32 @@ export default function App(): ReactElement {
     }
   }, []);
 
+  /** A4：画像选项（Composer chip 数据源）。 */
+  const refreshProfiles = useCallback(async () => {
+    try {
+      const profiles = await listProfiles();
+      setProfileOptions(
+        profiles
+          .filter((p) => p.profileCode !== 'default')
+          .map((p) => ({
+            value: p.profileCode,
+            label: `${p.displayName || p.profileCode}（${p.profileCode}）`,
+          })),
+      );
+    } catch {
+      setProfileOptions([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (boot.phase !== 'ready') {
       return;
     }
     void refreshSessions();
     void refreshModel();
+    void refreshProfiles();
     void refreshUsage(agentId);
-  }, [boot.phase, refreshSessions, refreshModel, refreshUsage, agentId]);
+  }, [boot.phase, refreshSessions, refreshModel, refreshProfiles, refreshUsage, agentId]);
 
   // F3：30s 轻量轮询兜底（done 后另有主动刷新）
   useEffect(() => {
@@ -446,6 +466,8 @@ export default function App(): ReactElement {
             message: text,
             // F2：per-message model 透传（空 = 跟随生效渠道）
             model: selectedModel || undefined,
+            // A4：per-message 画像透传（空 = default 画像）
+            profile: selectedProfile || undefined,
           },
           {
             onChunk: ({ content }) => {
@@ -528,7 +550,7 @@ export default function App(): ReactElement {
           .catch(() => undefined);
       }
     },
-    [streaming, selectedModel, refreshSessions, refreshUsage],
+    [streaming, selectedModel, selectedProfile, refreshSessions, refreshUsage],
   );
 
   const handleStop = useCallback(() => {
@@ -661,6 +683,7 @@ export default function App(): ReactElement {
           onClose={() => {
             setShowSettings(false);
             void refreshModel();
+            void refreshProfiles();
             void refreshSessions();
           }}
         />
@@ -710,6 +733,9 @@ export default function App(): ReactElement {
               models={modelOptions}
               selectedModel={selectedModel}
               onSelectModel={setSelectedModel}
+              profiles={profileOptions}
+              selectedProfile={selectedProfile}
+              onSelectProfile={setSelectedProfile}
               usageTotal={usage?.totalTokens ?? null}
               focusToken={focusToken}
               onSend={handleSend}

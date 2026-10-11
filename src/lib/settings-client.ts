@@ -4,6 +4,7 @@
  */
 
 import { apiRequest } from './agent-client';
+import type { AgentProfile, AgentProfileInput } from '../types';
 
 /* ----------------------------- 类型 ----------------------------- */
 
@@ -172,6 +173,43 @@ export function savePluginConfig(
 export function deletePluginConfigKey(pluginId: string, configKey: string): Promise<void> {
   return apiRequest<void>(
     `/api/harness/plugins/${encodeURIComponent(pluginId)}/config/${encodeURIComponent(configKey)}`,
+    'DELETE',
+  );
+}
+
+/* ----------------------------- 智能体画像（A4） ----------------------------- */
+
+export function listProfiles(): Promise<AgentProfile[]> {
+  return apiRequest<AgentProfile[]>('/api/harness/profiles');
+}
+
+/** 未知码后端回 40000 → 本函数返回 null（调用方按「不存在」处理）。 */
+export async function getProfile(profileCode: string): Promise<AgentProfile | null> {
+  try {
+    return await apiRequest<AgentProfile>(
+      `/api/harness/profiles/${encodeURIComponent(profileCode)}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** upsert：部分字段保存，缺省沿用原值。 */
+export function saveProfile(
+  profileCode: string,
+  input: AgentProfileInput,
+): Promise<AgentProfile> {
+  return apiRequest<AgentProfile>(
+    `/api/harness/profiles/${encodeURIComponent(profileCode)}`,
+    'PUT',
+    input,
+  );
+}
+
+/** 删除画像；`default` 禁删（后端 40000，错误信息经 toast 呈现）。 */
+export function deleteProfile(profileCode: string): Promise<void> {
+  return apiRequest<void>(
+    `/api/harness/profiles/${encodeURIComponent(profileCode)}`,
     'DELETE',
   );
 }

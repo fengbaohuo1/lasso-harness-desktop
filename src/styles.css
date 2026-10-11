@@ -767,6 +767,13 @@ body {
   margin-bottom: 10px;
 }
 
+.settings-toolbar__hint {
+  display: inline-block;
+  margin-right: 10px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
 .settings-table {
   width: 100%;
   border-collapse: collapse;
@@ -1767,7 +1774,8 @@ body {
   margin-bottom: 8px;
 }
 
-.composer__model {
+.composer__model,
+.composer__profile {
   max-width: 260px;
   padding: 3px 8px;
   border-radius: 999px;
@@ -1780,7 +1788,8 @@ body {
   cursor: pointer;
 }
 
-.composer__model:focus {
+.composer__model:focus,
+.composer__profile:focus {
   border-color: var(--accent);
   color: var(--text);
 }
