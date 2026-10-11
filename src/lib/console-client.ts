@@ -4,6 +4,7 @@
  */
 
 import { apiRequest } from './agent-client';
+import type { ToolCatalogItem } from './commands';
 import type {
   ApprovalVerdict,
   ChatMessage,
@@ -39,11 +40,16 @@ export function deleteSession(sessionId: string): Promise<void> {
   );
 }
 
-/** 会话用量（F6 契约：事件聚合，无 usage 时全 0）。 */
+/** 会话用量（F6 契约：事件聚合，无 usage 时全 0；C3 扩展 steps/toolCalls/contextTokens/compactions）。 */
 export function fetchSessionUsage(sessionId: string): Promise<SessionUsage> {
   return apiRequest<SessionUsage>(
     `/api/harness/console/sessions/${encodeURIComponent(sessionId)}/usage`,
   );
+}
+
+/** 工具目录（C1 命令面板「工具」组数据源；A1 画像白名单管理同源）。 */
+export function fetchToolCatalog(): Promise<ToolCatalogItem[]> {
+  return apiRequest<ToolCatalogItem[]>('/api/harness/tool-catalog');
 }
 
 export function fetchSessionMessages(sessionId: string): Promise<ConsoleMessage[]> {

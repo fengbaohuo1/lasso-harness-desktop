@@ -241,12 +241,20 @@ export interface SessionSummary {
   eventCount?: number;
 }
 
-/** GET /api/harness/console/sessions/{id}/usage（F6：事件聚合）。 */
+/** GET /api/harness/console/sessions/{id}/usage（F6：事件聚合；C3 状态栏扩展）。 */
 export interface SessionUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
   turns: number;
+  /** 步数（StepEnd 事件计数）。 */
+  steps: number;
+  /** 工具调用次数（ToolCall 事件计数）。 */
+  toolCalls: number;
+  /** 当前上下文占用估计（最近一次 LLM 调用的 promptTokens）。 */
+  contextTokens: number;
+  /** 上下文压缩次数（Compacted 事件计数）。 */
+  compactions: number;
 }
 
 /** 会话回放中的工具条目（tool_call / tool_result）。 */
@@ -363,11 +371,45 @@ export interface PluginSettingsPage {
   actions?: PluginUiAction[];
 }
 
+/* ----------------------- 第七阶段：slashCommands / mentionProviders（schemaVersion 1 增量） ----------------------- */
+
+/** 插件贡献的斜杠命令（skill）：面板「插件命令」组。 */
+export interface PluginSlashCommand {
+  /** 命令名（面板显示 /name）。 */
+  name: string;
+  description?: string;
+  /** 参数提示（/name ⟨城市名⟩）。 */
+  argumentHint?: string;
+  /** 选中后填入输入框的模板；{arg} = 命令后随行参数。 */
+  template?: string;
+  /** insert（默认，填入继续编辑）| send（直接发送）。 */
+  mode?: 'insert' | 'send';
+}
+
+/** 插件贡献的 @ 提及源：endpoint 取候选、readEndpoint 发送时展开内容。 */
+export interface PluginMentionProvider {
+  /** 同插件内唯一。 */
+  id: string;
+  /** 触发符（v1 固定 @）。 */
+  trigger?: string;
+  /** 面板分组标题。 */
+  label?: string;
+  /** 候选端点：GET /plugins/{id}/api/{endpoint}?q= → {"items":[{value,label,description?}]}。 */
+  endpoint: string;
+  /** 展开端点：GET /plugins/{id}/api/{readEndpoint}?path= → {"content":"..."}。 */
+  readEndpoint?: string;
+  placeholder?: string;
+}
+
 /** META-INF/plugin-ui.json（SD1 统一插件包的前端贡献清单）。 */
 export interface PluginUiManifest {
   schemaVersion: number;
   toolRenderers?: Record<string, PluginToolRenderer>;
   settingsPage?: PluginSettingsPage;
+  /** C1：插件贡献的斜杠命令（skill）。 */
+  slashCommands?: PluginSlashCommand[];
+  /** C2：插件贡献的 @ 提及源。 */
+  mentionProviders?: PluginMentionProvider[];
 }
 
 /** GET /api/harness/plugins/ui 条目（仅 ACTIVE）。 */

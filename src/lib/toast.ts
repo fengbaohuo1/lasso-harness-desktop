@@ -4,7 +4,7 @@
  * 组件内不直接操作 DOM——渲染职责在 components/ToastContainer。
  */
 
-export type ToastKind = 'success' | 'error';
+export type ToastKind = 'success' | 'error' | 'info';
 
 export interface ToastItem {
   id: number;
@@ -26,12 +26,12 @@ function emit(): void {
   }
 }
 
-/** 弹一条 toast；默认 error（主区域错误提示的替代品）。 */
-export function toast(message: string, kind: ToastKind = 'error'): void {
+/** 弹一条 toast；默认 error（主区域错误提示的替代品）；durationMs 自定义时长（/help 类长文案用）。 */
+export function toast(message: string, kind: ToastKind = 'error', durationMs = 3000): void {
   const item: ToastItem = { id: nextId++, message, kind };
   items = [...items, item];
   emit();
-  const timer = window.setTimeout(() => dismissToast(item.id), 3000);
+  const timer = window.setTimeout(() => dismissToast(item.id), durationMs);
   timers.set(item.id, timer);
 }
 

@@ -9,7 +9,7 @@
  * 组件内不直接 fetch / invoke。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import Composer from './components/Composer';
 import type { ComposerModelOption, ComposerProfileOption } from './components/Composer';
@@ -18,6 +18,7 @@ import type { QuickAction } from './components/ConversationView';
 import SettingsDialog from './components/SettingsDialog';
 import type { Tab } from './components/SettingsDialog';
 import Sidebar from './components/Sidebar';
+import StatusBar from './components/StatusBar';
 import ToastContainer from './components/ToastContainer';
 import { MonitorIcon, MoonIcon, SunIcon } from './components/icons';
 import {
@@ -30,6 +31,8 @@ import {
   streamAgentMessage,
   waitForAgentReady,
 } from './lib/agent-client';
+import { collectSlashItems } from './lib/commands';
+import type { SlashItem, ToolCatalogItem } from './lib/commands';
 import {
   answerQuestion,
   deleteSession,
@@ -38,10 +41,13 @@ import {
   fetchSessionMessages,
   fetchSessionUsage,
   fetchSessions,
+  fetchToolCatalog,
   renameSession,
   resolveApproval,
   toChatMessages,
 } from './lib/console-client';
+import { expandMentions } from './lib/mentions';
+import { usePluginUiMap } from './lib/plugin-ui';
 import { listModelChannels, listProfiles } from './lib/settings-client';
 import {
   THEME_MODE_LABEL,
@@ -55,6 +61,7 @@ import type { ThemeMode } from './lib/theme';
 import { toast } from './lib/toast';
 import type {
   AgentStatus,
+  AgentProfile,
   ApprovalVerdict,
   BootState,
   ChatMessage,
@@ -108,8 +115,11 @@ export default function App(): ReactElement {
   const [selectedModel, setSelectedModel] = useState('');
   const [profileOptions, setProfileOptions] = useState<ComposerProfileOption[]>([]);
   const [selectedProfile, setSelectedProfile] = useState('');
+  const [profileDetails, setProfileDetails] = useState<AgentProfile[]>([]);
+  const [toolItems, setToolItems] = useState<ToolCatalogItem[]>([]);
   const [usage, setUsage] = useState<SessionUsage | null>(null);
   const [focusToken, setFocusToken] = useState(0);
+  const uiMap = usePluginUiMap();
 
   const bootStartedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -205,10 +215,11 @@ export default function App(): ReactElement {
     }
   }, []);
 
-  /** A4：画像选项（Composer chip 数据源）。 */
+  /** A4：画像选项（Composer chip 数据源）；详情留作状态栏上下文预算（SC6）。 */
   const refreshProfiles = useCallback(async () => {
     try {
       const profiles = await listProfiles();
+      setProfileDetails(profiles);
       setProfileOptions(
         profiles
           .filter((p) => p.profileCode !== 'default')
@@ -218,7 +229,17 @@ export default function App(): ReactElement {
           })),
       );
     } catch {
+      setProfileDetails([]);
       setProfileOptions([]);
+    }
+  }, []);
+
+  /** C1：工具目录（命令面板「工具」组）。 */
+  const refreshToolCatalog = useCallback(async () => {
+    try {
+      setToolItems(await fetchToolCatalog());
+    } catch {
+      setToolItems([]);
     }
   }, []);
 
@@ -229,8 +250,9 @@ export default function App(): ReactElement {
     void refreshSessions();
     void refreshModel();
     void refreshProfiles();
+    void refreshToolCatalog();
     void refreshUsage(agentId);
-  }, [boot.phase, refreshSessions, refreshModel, refreshProfiles, refreshUsage, agentId]);
+  }, [boot.phase, refreshSessions, refreshModel, refreshProfiles, refreshToolCatalog, refreshUsage, agentId]);
 
   // F3：30s 轻量轮询兜底（done 后另有主动刷新）
   useEffect(() => {
@@ -392,6 +414,9 @@ export default function App(): ReactElement {
       }
       const regenerating = options?.regenerating === true;
 
+      // C2：@file 发送展开（SC4：≤5 文件 × 8KB；读不到保留原 token，气泡仍显示原文）
+      const expanded = await expandMentions(text, uiMap);
+
       setPromptHistory((prev) => [...prev.filter((item) => item !== text), text].slice(-50));
       const userMessage: ChatMessage = {
         id: uid(),
@@ -463,7 +488,7 @@ export default function App(): ReactElement {
         await streamAgentMessage(
           {
             agentId: agentIdRef.current,
-            message: text,
+            message: expanded,
             // F2：per-message model 透传（空 = 跟随生效渠道）
             model: selectedModel || undefined,
             // A4：per-message 画像透传（空 = default 画像）
@@ -550,7 +575,7 @@ export default function App(): ReactElement {
           .catch(() => undefined);
       }
     },
-    [streaming, selectedModel, selectedProfile, refreshSessions, refreshUsage],
+    [streaming, selectedModel, selectedProfile, refreshSessions, refreshUsage, uiMap],
   );
 
   const handleStop = useCallback(() => {
@@ -586,6 +611,34 @@ export default function App(): ReactElement {
     setSettingsTab(action === 'models' ? 'models' : action === 'plugins' ? 'plugins' : 'about');
     setShowSettings(true);
   }, []);
+
+  /* ----------------------------- C1 斜杠命令（action 本地执行） ----------------------------- */
+
+  const handleCommand = useCallback(
+    (action: string) => {
+      if (action === 'new') {
+        handleNewSession();
+        return;
+      }
+      if (action === 'settings') {
+        setShowSettings(true);
+        return;
+      }
+      if (action === 'theme') {
+        handleToggleTheme();
+        return;
+      }
+      if (action === 'help') {
+        toast(
+          'Enter 发送 · Shift+Enter 换行 · Ctrl+N 新对话 · Ctrl+, 设置 · Esc 停止生成\n'
+            + '/ 命令面板（/plan 规划、/review 审查、/fix 修复…） · @ 引用文件 · ↑/↓ 召回草稿',
+          'info',
+          6000,
+        );
+      }
+    },
+    [handleNewSession, handleToggleTheme],
+  );
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -630,6 +683,21 @@ export default function App(): ReactElement {
     ready: '就绪',
     failed: '启动失败',
   };
+
+  // C1：命令面板数据（内置 + 插件 slashCommands + 工具目录）
+  const slashItems: SlashItem[] = useMemo(
+    () => collectSlashItems(uiMap, toolItems),
+    [uiMap, toolItems],
+  );
+
+  // C3 状态栏：上下文预算取所选画像（缺省 default），模型/画像展示名
+  const contextBudget = useMemo(() => {
+    const code = selectedProfile || 'default';
+    return profileDetails.find((p) => p.profileCode === code)?.contextTokenBudget ?? null;
+  }, [profileDetails, selectedProfile]);
+  const profileLabel = selectedProfile
+    ? profileOptions.find((p) => p.value === selectedProfile)?.label ?? selectedProfile
+    : null;
 
   return (
     <div className="app-shell">
@@ -736,10 +804,18 @@ export default function App(): ReactElement {
               profiles={profileOptions}
               selectedProfile={selectedProfile}
               onSelectProfile={setSelectedProfile}
-              usageTotal={usage?.totalTokens ?? null}
+              slashItems={slashItems}
+              onCommand={handleCommand}
               focusToken={focusToken}
               onSend={handleSend}
               onStop={handleStop}
+            />
+            <StatusBar
+              usage={usage}
+              contextBudget={contextBudget}
+              modelLabel={activeModel}
+              profileLabel={profileLabel}
+              streaming={streaming}
             />
           </main>
         </div>

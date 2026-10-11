@@ -18,7 +18,14 @@ import {
 import ApprovalCard from './ApprovalCard';
 import QuestionCard from './QuestionCard';
 import ToolCardBlocks from './ToolCardBlocks';
-import { RefreshIcon } from './icons';
+import {
+  ArrowDownIcon,
+  CheckIcon,
+  ChevronIcon,
+  CloseIcon,
+  GearIcon,
+  RefreshIcon,
+} from './icons';
 import type {
   ApprovalVerdict,
   ChatMessage,
@@ -125,15 +132,24 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
         onClick={() => setExpanded((prev) => !prev)}
       >
         <span className={`tool-card__icon tool-card__icon--${card.status}`} aria-hidden="true">
-          {card.status === 'running' ? '⚙' : card.status === 'success' ? '✓' : '✕'}
+          {card.status === 'running' ? (
+            <GearIcon />
+          ) : card.status === 'success' ? (
+            <CheckIcon />
+          ) : (
+            <CloseIcon />
+          )}
         </span>
         <span className="tool-card__name">{displayName}</span>
         <span className={`tool-card__status tool-card__status--${card.status}`}>
           {statusLabel[card.status]}
         </span>
         {!expanded && summary ? <span className="tool-card__summary">{summary}</span> : null}
-        <span className="tool-card__chevron" aria-hidden="true">
-          {expanded ? '▾' : '▸'}
+        <span
+          className={`tool-card__chevron${expanded ? ' tool-card__chevron--open' : ''}`}
+          aria-hidden="true"
+        >
+          <ChevronIcon />
         </span>
       </button>
       {expanded ? (
@@ -319,7 +335,7 @@ export default function ConversationView({
         {messages.length === 0 ? (
           <div className="welcome-hero">
             <div className="welcome-hero__logo" aria-hidden="true">
-              ◆
+              jnf
             </div>
             <h1 className="welcome-hero__title">jnf-harness Desktop</h1>
             <p className="welcome-hero__desc">
@@ -361,7 +377,7 @@ export default function ConversationView({
               </button>
             </div>
             <p className="welcome-hero__shortcut">
-              Enter 发送 · Shift+Enter 换行 · Ctrl+N 新对话 · Ctrl+, 设置
+              Enter 发送 · / 命令与工具 · @ 引用文件 · Ctrl+N 新对话 · Ctrl+, 设置
             </p>
           </div>
         ) : (
@@ -388,7 +404,7 @@ export default function ConversationView({
       </div>
       {!nearBottom ? (
         <button type="button" className="scroll-bottom" onClick={() => scrollToBottom()}>
-          ↓ 回到底部
+          <ArrowDownIcon /> 回到底部
         </button>
       ) : null}
     </div>

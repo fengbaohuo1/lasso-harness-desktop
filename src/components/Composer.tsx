@@ -1,13 +1,24 @@
 /**
- * 输入区（F2）：模型选择 chip + 自动增高输入 + 发送/停止图标按钮 + 草稿历史 + 用量徽标。
- * - Enter 发送、Shift+Enter 换行、Ctrl+Enter 发送；↑/↓ 召回历史草稿；IME 组合守卫保留；
- * - 流式期间输入框**不禁用**（可先输入排队），Enter 不发送，完成后回车发送；
- * - 空输入不可发送；停止按钮方形图标 + tooltip「停止生成」。
+ * 输入区（F2 + C1/C2）：模型/画像 chip + 自动增高输入 + 发送/停止 + 草稿历史 +
+ * `/` 命令面板（内置命令/插件命令/工具，SC1~SC3）与 `@` 文件提及候选（mentionProviders）。
+ * - Enter 发送、Shift+Enter 换行；↑/↓ 召回历史草稿；IME 组合守卫保留；
+ * - 浮层开着时 ↑↓/Enter/Tab/Esc 归浮层（选中=采纳/关闭）；
+ * - `/` 仅在输入开头触发（命令语义），`@` 在空白后触发（提及语义）；
+ * - action 命令走 onCommand 本地执行；prompt 命令填模板（{arg} 处留光标）；
+ *   mode:'send' 直接发送；工具项插入工具引导文本；提及选中插 `@path`。
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react';
+import InputPalette from './InputPalette';
+import type { PaletteEntry } from './InputPalette';
 import { SendIcon, StopIcon } from './icons';
+import { fillTemplate, filterSlashItems } from '../lib/commands';
+import type { PaletteState, SlashItem } from '../lib/commands';
+import { detectPaletteToken } from '../lib/commands';
+import { fetchMentionGroups } from '../lib/mentions';
+import type { MentionCandidate } from '../lib/mentions';
+import { usePluginUiMap } from '../lib/plugin-ui';
 
 /** 模型选项（数据源 GET /api/harness/settings/models）。 */
 export interface ComposerModelOption {
@@ -44,8 +55,10 @@ export interface ComposerProps {
   /** 当前选择的画像码；'' = 默认画像。 */
   selectedProfile?: string;
   onSelectProfile?: (profile: string) => void;
-  /** 会话累计 tokens（F6）；0/undefined 隐藏徽标。 */
-  usageTotal?: number | null;
+  /** C1：命令面板数据（内置 + 插件 slashCommands + 工具目录）。 */
+  slashItems?: SlashItem[];
+  /** C1：action 型命令本地执行（new/settings/theme/help）。 */
+  onCommand?: (action: string) => void;
   /** 焦点令牌：变化时聚焦输入框（欢迎页快捷入口用）。 */
   focusToken?: number;
   onSend: (text: string) => void | Promise<void>;
@@ -53,6 +66,12 @@ export interface ComposerProps {
 }
 
 const MAX_INPUT_HEIGHT = 200;
+
+/** 浮层条目与载荷。 */
+interface PaletteRow {
+  entry: PaletteEntry;
+  payload: SlashItem | MentionCandidate;
+}
 
 export default function Composer({
   disabled,
@@ -64,14 +83,19 @@ export default function Composer({
   profiles = [],
   selectedProfile = '',
   onSelectProfile,
-  usageTotal,
+  slashItems = [],
+  onCommand,
   focusToken = 0,
   onSend,
   onStop,
 }: ComposerProps): ReactElement {
   const [draft, setDraft] = useState('');
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const [palette, setPalette] = useState<PaletteState | null>(null);
+  const [paletteIndex, setPaletteIndex] = useState(0);
+  const [mentionItems, setMentionItems] = useState<MentionCandidate[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const uiMap = usePluginUiMap();
 
   const canSend = !disabled && !streaming && draft.trim() !== '';
 
@@ -92,6 +116,126 @@ export default function Composer({
     }
   }, [focusToken]);
 
+  // C2：@ 候选防抖拉取（150ms；provider 失败静默跳过）
+  useEffect(() => {
+    if (!palette || palette.mode !== 'mention') {
+      setMentionItems([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void fetchMentionGroups(uiMap, palette.query).then((groups) => {
+        if (!cancelled) {
+          setMentionItems(groups.flatMap((group) => group.items));
+        }
+      });
+    }, 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [palette, uiMap]);
+
+  const paletteRows: PaletteRow[] = useMemo(() => {
+    if (!palette) {
+      return [];
+    }
+    if (palette.mode === 'slash') {
+      return filterSlashItems(slashItems, palette.query).map((item) => ({
+        entry: {
+          key: item.id,
+          group: item.kind === 'action' ? '命令' : item.kind === 'tool' ? '工具' : '插件命令',
+          title: item.argumentHint ? `${item.title} ⟨${item.argumentHint}⟩` : item.title,
+          description: item.description,
+          badge: item.badge,
+        },
+        payload: item,
+      }));
+    }
+    return mentionItems.map((item) => ({
+      entry: {
+        key: `${item.pluginId}:${item.value}`,
+        group: item.providerLabel,
+        title: item.label,
+        description: item.value,
+        hint: item.description,
+      },
+      payload: item,
+    }));
+  }, [palette, slashItems, mentionItems]);
+
+  const syncPalette = (text: string, caret: number): void => {
+    const next = detectPaletteToken(text, caret);
+    setPalette((prev) => {
+      if (!next) {
+        return null;
+      }
+      if (prev && prev.mode === next.mode && prev.start === next.start && prev.query === next.query) {
+        return prev;
+      }
+      return next;
+    });
+    setPaletteIndex(0);
+  };
+
+  /** 采纳浮层项：action 执行 / prompt 填模板 / 工具填引导 / 提及插路径。 */
+  const applyPaletteRow = (index: number): void => {
+    const row = paletteRows[index];
+    const state = palette;
+    if (!row || !state) {
+      return;
+    }
+    const el = textareaRef.current;
+    const caret = el ? el.selectionStart : draft.length;
+    const head = draft.slice(0, state.start);
+    const tail = draft.slice(caret);
+
+    if (state.mode === 'mention') {
+      const item = row.payload as MentionCandidate;
+      const inserted = `@${item.value} `;
+      setDraft(`${head}${inserted}${tail}`);
+      setPalette(null);
+      focusAt(head.length + inserted.length);
+      return;
+    }
+
+    const command = row.payload as SlashItem;
+    if (command.kind === 'action') {
+      setDraft(`${head}${tail}`);
+      setPalette(null);
+      if (command.action && onCommand) {
+        onCommand(command.action);
+      }
+      return;
+    }
+
+    const template = command.template ?? '';
+    const filled = fillTemplate(template, '');
+    const argIndex = template.indexOf('{arg}');
+    if (command.send) {
+      setDraft('');
+      setPalette(null);
+      const message = `${head}${filled}${tail}`.trim();
+      if (message) {
+        void onSend(message);
+      }
+      return;
+    }
+    setDraft(`${head}${filled}${tail}`);
+    setPalette(null);
+    focusAt(argIndex >= 0 ? head.length + argIndex : head.length + filled.length);
+  };
+
+  const focusAt = (position: number): void => {
+    window.requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(position, position);
+      }
+    });
+  };
+
   const submit = (): void => {
     const text = draft.trim();
     if (!text || !canSend) {
@@ -99,6 +243,7 @@ export default function Composer({
     }
     setDraft('');
     setHistoryIndex(null);
+    setPalette(null);
     void onSend(text);
     textareaRef.current?.focus();
   };
@@ -110,6 +255,34 @@ export default function Composer({
 
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
     const target = e.currentTarget;
+    // 浮层开着：↑↓/Enter/Tab/Esc 归浮层
+    if (palette) {
+      const len = paletteRows.length;
+      if (e.key === 'ArrowDown' && len > 0) {
+        e.preventDefault();
+        setPaletteIndex((i) => (i + 1) % len);
+        return;
+      }
+      if (e.key === 'ArrowUp' && len > 0) {
+        e.preventDefault();
+        setPaletteIndex((i) => (i - 1 + len) % len);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        if (len > 0) {
+          applyPaletteRow(paletteIndex);
+        } else {
+          setPalette(null);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setPalette(null);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (!streaming) {
@@ -142,7 +315,7 @@ export default function Composer({
     ? 'Agent 尚未就绪…'
     : streaming
       ? '生成中…可先输入，完成后回车发送'
-      : '输入消息，Enter 发送，Shift+Enter 换行\nCtrl+N 新对话 · Ctrl+, 设置 · ↑/↓ 召回历史';
+      : '输入消息，Enter 发送，Shift+Enter 换行\n/ 命令与工具 · @ 引用文件 · ↑/↓ 召回历史草稿';
 
   return (
     <form className="composer" onSubmit={handleSubmit}>
@@ -177,14 +350,23 @@ export default function Composer({
             ))}
           </select>
         ) : null}
-        {usageTotal && usageTotal > 0 ? (
-          <span className="composer__tokens" title="本会话累计 token 用量（事件聚合）">
-            tokens 累计 {usageTotal.toLocaleString()}
-          </span>
-        ) : null}
         <span className="composer__spacer" />
       </div>
       <div className="composer__row">
+        {palette ? (
+          <InputPalette
+            entries={paletteRows.map((row) => row.entry)}
+            selectedIndex={paletteIndex}
+            onHover={setPaletteIndex}
+            onPick={applyPaletteRow}
+            footer="↑↓ 选择 · Enter/Tab 采纳 · Esc 关闭"
+            emptyText={
+              palette.mode === 'slash'
+                ? '无匹配命令（/help 看全部）'
+                : '无匹配文件（继续输入可模糊过滤）'
+            }
+          />
+        ) : null}
         <textarea
           ref={textareaRef}
           className="composer__input"
@@ -192,8 +374,13 @@ export default function Composer({
           placeholder={placeholder}
           disabled={disabled}
           rows={2}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            syncPalette(e.target.value, e.target.selectionStart);
+          }}
+          onSelect={(e) => syncPalette(e.currentTarget.value, e.currentTarget.selectionStart)}
           onKeyDown={handleKeyDown}
+          onBlur={() => setPalette(null)}
         />
         <div className="composer__actions">
           {streaming ? (

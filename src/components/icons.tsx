@@ -86,3 +86,33 @@ export function RefreshIcon(): ReactElement {
     </>,
   );
 }
+
+/** 工具卡成功态（替代 ✓ 字形）。 */
+export function CheckIcon(): ReactElement {
+  return svg(<path d="M3 8.4l3.2 3.2L13 4.8" />);
+}
+
+/** 工具卡失败态（替代 ✕ 字形）。 */
+export function CloseIcon(): ReactElement {
+  return svg(<path d="M4 4l8 8M12 4l-8 8" />);
+}
+
+/** 工具卡运行态（替代 ⚙ 字形）。 */
+export function GearIcon(): ReactElement {
+  return svg(
+    <>
+      <circle cx="8" cy="8" r="2.2" />
+      <path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M12.4 3.6l-1.3 1.3M4.9 11.1l-1.3 1.3" />
+    </>,
+  );
+}
+
+/** 折叠箭头（右向；展开态 CSS 旋转 90°，替代 ▸/▾ 字形）。 */
+export function ChevronIcon(): ReactElement {
+  return svg(<path d="M6 3.5L10.5 8 6 12.5" />);
+}
+
+/** 回到底部箭头（替代 ↓ 文本字形）。 */
+export function ArrowDownIcon(): ReactElement {
+  return svg(<path d="M8 2.5v10M4 8.8L8 12.8l4-4" />);
+}
