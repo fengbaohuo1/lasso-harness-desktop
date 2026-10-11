@@ -2322,3 +2322,52 @@ body {
 .icon-btn:hover:not(:disabled) {
   border-color: var(--accent-border);
 }
+
+/* ============================= 第八阶段：命令纠偏 · 贡献面 · 工具注册 ============================= */
+
+/* P8-2：插件贡献详情（工具/端点/命令/提及源 chip 组） */
+.plugin-contrib {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.plugin-contrib b {
+  color: var(--text);
+  margin-right: 6px;
+}
+
+.plugin-contrib__chip {
+  display: inline-block;
+  margin: 2px 4px 0 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.settings-panel__toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-panel__hint {
+  margin: -4px 0 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.badge--warn {
+  border-color: var(--warning-border);
+  background: var(--warning-badge-bg);
+  color: var(--warning);
+}

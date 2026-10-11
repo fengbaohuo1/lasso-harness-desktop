@@ -32,20 +32,21 @@ import {
   waitForAgentReady,
 } from './lib/agent-client';
 import { collectSlashItems } from './lib/commands';
-import type { SlashItem, ToolCatalogItem } from './lib/commands';
+import type { SlashItem } from './lib/commands';
 import {
   answerQuestion,
+  compactSession,
   deleteSession,
   fetchPendingApprovals,
   fetchPendingQuestions,
   fetchSessionMessages,
   fetchSessionUsage,
   fetchSessions,
-  fetchToolCatalog,
   renameSession,
   resolveApproval,
   toChatMessages,
 } from './lib/console-client';
+import { exportTranscriptMarkdown } from './lib/export';
 import { expandMentions } from './lib/mentions';
 import { usePluginUiMap } from './lib/plugin-ui';
 import { listModelChannels, listProfiles } from './lib/settings-client';
@@ -116,9 +117,9 @@ export default function App(): ReactElement {
   const [profileOptions, setProfileOptions] = useState<ComposerProfileOption[]>([]);
   const [selectedProfile, setSelectedProfile] = useState('');
   const [profileDetails, setProfileDetails] = useState<AgentProfile[]>([]);
-  const [toolItems, setToolItems] = useState<ToolCatalogItem[]>([]);
   const [usage, setUsage] = useState<SessionUsage | null>(null);
   const [focusToken, setFocusToken] = useState(0);
+  const [modelFocusToken, setModelFocusToken] = useState(0);
   const uiMap = usePluginUiMap();
 
   const bootStartedRef = useRef(false);
@@ -234,14 +235,7 @@ export default function App(): ReactElement {
     }
   }, []);
 
-  /** C1：工具目录（命令面板「工具」组）。 */
-  const refreshToolCatalog = useCallback(async () => {
-    try {
-      setToolItems(await fetchToolCatalog());
-    } catch {
-      setToolItems([]);
-    }
-  }, []);
+  /** C1：命令面板数据（内置 + 插件 slashCommands；function tools 不进命令面） */
 
   useEffect(() => {
     if (boot.phase !== 'ready') {
@@ -250,9 +244,8 @@ export default function App(): ReactElement {
     void refreshSessions();
     void refreshModel();
     void refreshProfiles();
-    void refreshToolCatalog();
     void refreshUsage(agentId);
-  }, [boot.phase, refreshSessions, refreshModel, refreshProfiles, refreshToolCatalog, refreshUsage, agentId]);
+  }, [boot.phase, refreshSessions, refreshModel, refreshProfiles, refreshUsage, agentId]);
 
   // F3：30s 轻量轮询兜底（done 后另有主动刷新）
   useEffect(() => {
@@ -628,16 +621,35 @@ export default function App(): ReactElement {
         handleToggleTheme();
         return;
       }
+      if (action === 'compact') {
+        // P8-1：真压缩——Compacted 事件落盘（历史保留可溯）
+        void compactSession(agentIdRef.current)
+          .then((result) => {
+            toast(result.compacted ? '已压缩以上对话内容' : '内容太少，无需压缩', 'success');
+            return refreshUsage(agentIdRef.current);
+          })
+          .catch((err) => toast(describeError(err)));
+        return;
+      }
+      if (action === 'model') {
+        setModelFocusToken((prev) => prev + 1);
+        return;
+      }
+      if (action === 'export') {
+        exportTranscriptMarkdown(messages, agentIdRef.current);
+        toast('已导出当前会话 Markdown', 'success');
+        return;
+      }
       if (action === 'help') {
         toast(
           'Enter 发送 · Shift+Enter 换行 · Ctrl+N 新对话 · Ctrl+, 设置 · Esc 停止生成\n'
-            + '/ 命令面板（/plan 规划、/review 审查、/fix 修复…） · @ 引用文件 · ↑/↓ 召回草稿',
+            + '/ 命令面板（/compact 压缩、/export 导出、/plan 规划…） · @ 引用文件 · ↑/↓ 召回草稿',
           'info',
           6000,
         );
       }
     },
-    [handleNewSession, handleToggleTheme],
+    [handleNewSession, handleToggleTheme, messages, refreshUsage],
   );
 
   useEffect(() => {
@@ -684,10 +696,10 @@ export default function App(): ReactElement {
     failed: '启动失败',
   };
 
-  // C1：命令面板数据（内置 + 插件 slashCommands + 工具目录）
+  /** P8-1：命令面板数据（内置 + 插件 slashCommands；function tools 不进命令面） */
   const slashItems: SlashItem[] = useMemo(
-    () => collectSlashItems(uiMap, toolItems),
-    [uiMap, toolItems],
+    () => collectSlashItems(uiMap),
+    [uiMap],
   );
 
   // C3 状态栏：上下文预算取所选画像（缺省 default），模型/画像展示名
@@ -807,6 +819,7 @@ export default function App(): ReactElement {
               slashItems={slashItems}
               onCommand={handleCommand}
               focusToken={focusToken}
+              modelFocusToken={modelFocusToken}
               onSend={handleSend}
               onStop={handleStop}
             />

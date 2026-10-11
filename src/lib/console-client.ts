@@ -10,6 +10,7 @@ import type {
   ChatMessage,
   ConsoleMessage,
   MsgSegment,
+  PluginContributions,
   RuntimeApprovalDto,
   RuntimeQuestionDto,
   SessionSummary,
@@ -50,6 +51,42 @@ export function fetchSessionUsage(sessionId: string): Promise<SessionUsage> {
 /** 工具目录（C1 命令面板「工具」组数据源；A1 画像白名单管理同源）。 */
 export function fetchToolCatalog(): Promise<ToolCatalogItem[]> {
   return apiRequest<ToolCatalogItem[]>('/api/harness/tool-catalog');
+}
+
+/** P8-1：强制压缩会话（/compact 指令）——Compacted 事件落盘。 */
+export function compactSession(
+  sessionId: string,
+): Promise<{ sessionId: string; compacted: boolean }> {
+  return apiRequest<{ sessionId: string; compacted: boolean }>(
+    `/api/harness/console/sessions/${encodeURIComponent(sessionId)}/compact`,
+    'POST',
+  );
+}
+
+/** P8-2：插件贡献面聚合（工具/端点/命令/提及源/配置页）。 */
+export function fetchPluginContributions(pluginId: string): Promise<PluginContributions> {
+  return apiRequest<PluginContributions>(
+    `/api/harness/plugins/${encodeURIComponent(pluginId)}/contributions`,
+  );
+}
+
+/** A1：某工具画像启用的工具（白名单）。 */
+export function fetchToolProfileBindings(profileCode: string): Promise<ToolCatalogItem[]> {
+  return apiRequest<ToolCatalogItem[]>(
+    `/api/harness/tool-catalog/profiles/${encodeURIComponent(profileCode)}`,
+  );
+}
+
+/** A1：整体替换某工具画像的绑定（P8-2 管理面）。 */
+export function replaceToolProfileBindings(
+  profileCode: string,
+  toolCodes: string[],
+): Promise<ToolCatalogItem[]> {
+  return apiRequest<ToolCatalogItem[]>(
+    `/api/harness/tool-catalog/profiles/${encodeURIComponent(profileCode)}`,
+    'PUT',
+    { toolCodes },
+  );
 }
 
 export function fetchSessionMessages(sessionId: string): Promise<ConsoleMessage[]> {

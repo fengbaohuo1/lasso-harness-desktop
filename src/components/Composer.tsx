@@ -61,6 +61,8 @@ export interface ComposerProps {
   onCommand?: (action: string) => void;
   /** 焦点令牌：变化时聚焦输入框（欢迎页快捷入口用）。 */
   focusToken?: number;
+  /** P8-1：/model 指令——变化时聚焦模型选择（行为控制不进消息）。 */
+  modelFocusToken?: number;
   onSend: (text: string) => void | Promise<void>;
   onStop: () => void;
 }
@@ -86,6 +88,7 @@ export default function Composer({
   slashItems = [],
   onCommand,
   focusToken = 0,
+  modelFocusToken = 0,
   onSend,
   onStop,
 }: ComposerProps): ReactElement {
@@ -95,6 +98,7 @@ export default function Composer({
   const [paletteIndex, setPaletteIndex] = useState(0);
   const [mentionItems, setMentionItems] = useState<MentionCandidate[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const modelSelectRef = useRef<HTMLSelectElement | null>(null);
   const uiMap = usePluginUiMap();
 
   const canSend = !disabled && !streaming && draft.trim() !== '';
@@ -115,6 +119,13 @@ export default function Composer({
       textareaRef.current?.focus();
     }
   }, [focusToken]);
+
+  // P8-1：/model 指令 → 聚焦模型选择
+  useEffect(() => {
+    if (modelFocusToken > 0) {
+      modelSelectRef.current?.focus();
+    }
+  }, [modelFocusToken]);
 
   // C2：@ 候选防抖拉取（150ms；provider 失败静默跳过）
   useEffect(() => {
@@ -144,7 +155,7 @@ export default function Composer({
       return filterSlashItems(slashItems, palette.query).map((item) => ({
         entry: {
           key: item.id,
-          group: item.kind === 'action' ? '命令' : item.kind === 'tool' ? '工具' : '插件命令',
+          group: item.group,
           title: item.argumentHint ? `${item.title} ⟨${item.argumentHint}⟩` : item.title,
           description: item.description,
           badge: item.badge,
@@ -178,7 +189,7 @@ export default function Composer({
     setPaletteIndex(0);
   };
 
-  /** 采纳浮层项：action 执行 / prompt 填模板 / 工具填引导 / 提及插路径。 */
+  /** 采纳浮层项：action 执行 / prompt 填模板 / 提及插路径。 */
   const applyPaletteRow = (index: number): void => {
     const row = paletteRows[index];
     const state = palette;
@@ -321,6 +332,7 @@ export default function Composer({
     <form className="composer" onSubmit={handleSubmit}>
       <div className="composer__toolbar">
         <select
+          ref={modelSelectRef}
           className="composer__model"
           value={selectedModel}
           aria-label="选择模型"

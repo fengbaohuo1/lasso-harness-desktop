@@ -417,3 +417,21 @@ export interface PluginUiEntry {
   pluginId: string;
   ui: PluginUiManifest | null;
 }
+
+/* ----------------------- 第八阶段：插件贡献面聚合（P8-2） ----------------------- */
+
+/** GET /api/harness/plugins/{id}/contributions：「这个插件注册了什么」一屏看全。 */
+export interface PluginContributions {
+  pluginId: string;
+  runtimeState: string;
+  /** 注册的 function tools（含描述）。 */
+  tools: Array<{ name: string; description: string | null }>;
+  /** 插件 REST 端点（/api/harness/plugins/{id}/api/**）。 */
+  endpoints: Array<{ method: string; path: string }>;
+  /** UI 声明：斜杠命令（skill）。 */
+  slashCommands: PluginSlashCommand[];
+  /** UI 声明：@ 提及源。 */
+  mentionProviders: PluginMentionProvider[];
+  hasSettingsPage: boolean;
+  settingsPageTitle?: string | null;
+}
