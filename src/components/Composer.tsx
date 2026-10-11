@@ -314,8 +314,8 @@ export default function Composer({
   const placeholder = disabled
     ? 'Agent 尚未就绪…'
     : streaming
-      ? '生成中…可先输入，完成后回车发送'
-      : '输入消息，Enter 发送，Shift+Enter 换行\n/ 命令与工具 · @ 引用文件 · ↑/↓ 召回历史草稿';
+      ? '生成中…'
+      : '输入消息 · / 命令 · @ 文件';
 
   return (
     <form className="composer" onSubmit={handleSubmit}>
@@ -373,7 +373,7 @@ export default function Composer({
           value={draft}
           placeholder={placeholder}
           disabled={disabled}
-          rows={2}
+          rows={1}
           onChange={(e) => {
             setDraft(e.target.value);
             syncPalette(e.target.value, e.target.selectionStart);
