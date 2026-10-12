@@ -240,7 +240,7 @@ export default function App(): ReactElement {
         seen.add(channel.modelCode);
         options.push({
           value: channel.modelCode,
-          label: `${channel.displayName || channel.channelCode} · ${channel.modelCode}`,
+          label: channel.modelCode || channel.displayName || channel.channelCode,
           active: channel.active,
         });
       }

@@ -462,6 +462,9 @@ export default function Composer({
         {/* 右栏：模型 + 思考 + 圆环 + 发送 */}
         <div className="composer__toolbar-right">
           <label className="composer-chip" title="选择本次对话使用的模型（默认跟随生效渠道）">
+                        {models.some((option) => option.value === selectedModel && option.active) ? (
+              <span className="status-dot status-dot--on" title="生效中" aria-hidden="true" />
+            ) : null}
             <select
               ref={modelSelectRef}
               className="composer-chip__select"
@@ -469,10 +472,10 @@ export default function Composer({
               aria-label="选择模型"
               onChange={(e) => onSelectModel(e.target.value)}
             >
-              <option value="">模型 · 默认</option>
+              <option value="">默认</option>
               {models.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.active ? `${option.label} · 生效` : option.label}
+                <option key={option.value} value={option.value} title={option.label}>
+                  {option.label}
                 </option>
               ))}
             </select>
