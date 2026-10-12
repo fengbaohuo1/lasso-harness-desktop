@@ -215,11 +215,11 @@ export default function ModelSettingsPanel(): ReactElement {
               <td>{channel.hasApiKey ? '已配置' : '未配置'}</td>
               <td>
                 {channel.active ? (
-                  <span className="badge badge--active">生效中</span>
+                  <span className="status-dot status-dot--ok" title="生效中" />
                 ) : channel.enabled ? (
-                  <span className="badge">启用</span>
+                  <span className="status-dot status-dot--on" title="启用（非生效渠道）" />
                 ) : (
-                  <span className="badge badge--muted">禁用</span>
+                  <span className="status-dot" title="禁用" />
                 )}
               </td>
               <td className="settings-table__actions">

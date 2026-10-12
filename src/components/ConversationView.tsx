@@ -18,6 +18,9 @@ import {
 import ApprovalCard from './ApprovalCard';
 import QuestionCard from './QuestionCard';
 import ToolCardBlocks from './ToolCardBlocks';
+import ReasoningBlock from './ReasoningBlock';
+import TaskCard, { latestTodoSnapshot, todoSnapshotOf, TaskStatusBar } from './TaskCard';
+import type { TodoSnapshot } from './TaskCard';
 import {
   ArrowDownIcon,
   CheckIcon,
@@ -106,6 +109,7 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
   const [expanded, setExpanded] = useState(false);
   const uiMap = usePluginUiMap();
   const match = findToolRenderer(uiMap, card.toolName);
+  const todo: TodoSnapshot | null = useMemo(() => todoSnapshotOf(card), [card]);
   const ctx: RenderContext = useMemo(
     () => ({ args: card.args, result: parseToolResult(card.result) }),
     [card.args, card.result],
@@ -154,10 +158,12 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
       </button>
       {expanded ? (
         <div>
-          {match && rendererVisible ? (
+          {/* P9-3：todo_write 命中任务卡渲染（快照清单，替代原始 JSON） */}
+          {todo ? <TaskCard snapshot={todo} /> : null}
+          {!todo && match && rendererVisible ? (
             <ToolCardBlocks blocks={match.renderer.blocks ?? []} pluginId={match.pluginId} ctx={ctx} />
           ) : null}
-          {!match || !rendererVisible ? (
+          {!todo && (!match || !rendererVisible) ? (
             <>
               {argsText ? (
                 <div className="tool-card__section">
@@ -238,6 +244,10 @@ function MessageBlock({
         </div>
       ) : (
         <div className="assistant-block">
+          {/* P9-8：思考内容折叠块（流式「思考中」/静止「思考过程」） */}
+          {message.reasoning ? (
+            <ReasoningBlock text={message.reasoning} streaming={message.reasoningStreaming === true} />
+          ) : null}
           <Segments message={message} isUser={false} />
 
           {message.status === 'streaming' && message.text === '' && message.toolCards.length === 0 ? (
@@ -328,6 +338,9 @@ export default function ConversationView({
     return -1;
   })();
 
+  // P9-3：会话任务状态（todo_write 最新快照；无任务不显示状态条）
+  const todoSnapshot = useMemo(() => latestTodoSnapshot(messages), [messages]);
+
   return (
     <div className="conversation-wrap">
       {streaming ? <div className="streaming-bar" aria-hidden="true" /> : null}
@@ -381,19 +394,22 @@ export default function ConversationView({
             </p>
           </div>
         ) : (
-          messages.map((message, index) => (
-            <MessageBlock
-              key={message.id}
-              message={message}
-              showRegenerate={
-                index === lastAssistantIndex &&
-                index === messages.length - 1 &&
-                !streaming &&
-                message.status !== 'streaming'
-              }
-              onRegenerate={onRegenerate}
-            />
-          ))
+          <>
+            {todoSnapshot ? <TaskStatusBar snapshot={todoSnapshot} /> : null}
+            {messages.map((message, index) => (
+              <MessageBlock
+                key={message.id}
+                message={message}
+                showRegenerate={
+                  index === lastAssistantIndex &&
+                  index === messages.length - 1 &&
+                  !streaming &&
+                  message.status !== 'streaming'
+                }
+                onRegenerate={onRegenerate}
+              />
+            ))}
+          </>
         )}
         {approvals.length > 0 && onResolveApproval ? (
           <ApprovalCard approvals={approvals} onResolve={onResolveApproval} />

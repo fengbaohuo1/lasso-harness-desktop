@@ -392,12 +392,15 @@ export default function PluginConfigPage({
             {plugin.pluginId} · v{plugin.pluginVersion}
           </span>
           <span
-            className={
-              plugin.status === 'ACTIVE' ? 'badge badge--active' : plugin.status === 'FAILED' ? 'badge badge--danger' : 'badge badge--muted'
-            }
-          >
-            {plugin.status}
-          </span>
+            className={`status-dot${
+              plugin.status === 'ACTIVE'
+                ? ' status-dot--ok'
+                : plugin.status === 'FAILED'
+                  ? ' status-dot--error'
+                  : ''
+            }`}
+            title={plugin.status}
+          />
         </div>
       </div>
 

@@ -24,6 +24,7 @@ import {
   type SseEventName,
   type StepBreakEvent,
   type StreamHandlers,
+  type ThinkingEvent,
   type ToolResultEvent,
 } from '../types';
 
@@ -344,6 +345,7 @@ function isSseEventName(value: unknown): value is SseEventName {
   return (
     value === 'meta' ||
     value === 'chunk' ||
+    value === 'thinking' ||
     value === 'step_break' ||
     value === 'tool_result' ||
     value === 'finish' ||
@@ -381,6 +383,10 @@ function dispatchSseFrame(
       return {};
     case 'chunk':
       handlers.onChunk?.(payload as ChunkEvent);
+      return {};
+    case 'thinking':
+      // P9-8 预留：思考增量转发给可选回调；UI 渲染由第二梯队实现
+      handlers.onThinking?.(payload as ThinkingEvent);
       return {};
     case 'step_break':
       handlers.onStepBreak?.(payload as StepBreakEvent);

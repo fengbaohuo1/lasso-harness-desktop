@@ -116,3 +116,70 @@ export function ChevronIcon(): ReactElement {
 export function ArrowDownIcon(): ReactElement {
   return svg(<path d="M8 2.5v10M4 8.8L8 12.8l4-4" />);
 }
+
+/* ----------------------------- 第九阶段：设置纵向导航图标 ----------------------------- */
+
+/** 模型渠道（芯片形）。 */
+export function ModelIcon(): ReactElement {
+  return svg(
+    <>
+      <rect x="4.2" y="4.2" width="7.6" height="7.6" rx="1.2" />
+      <path d="M6.6 1.8v1.6M9.4 1.8v1.6M6.6 12.6v1.6M9.4 12.6v1.6M1.8 6.6h1.6M1.8 9.4h1.6M12.6 6.6h1.6M12.6 9.4h1.6" />
+    </>,
+  );
+}
+
+/** 智能体预设（机器人头像）。 */
+export function PresetIcon(): ReactElement {
+  return svg(
+    <>
+      <rect x="2.8" y="5.2" width="10.4" height="7.6" rx="2" />
+      <path d="M8 2.4v2.8M6.2 8.4h.01M9.8 8.4h.01M5.8 10.8h4.4" />
+    </>,
+  );
+}
+
+/** 工具注册（扳手）。 */
+export function ToolsIcon(): ReactElement {
+  return svg(
+    <path d="M10.2 2.4a3.4 3.4 0 0 0-3.3 4.3L2.6 11a1.4 1.4 0 0 0 2 2l4.3-4.3a3.4 3.4 0 0 0 4.3-4.1l-2 2-1.9-1.9 2-2a3.4 3.4 0 0 0-1.1-.3z" />,
+  );
+}
+
+/** 插件管理（拼图块）。 */
+export function PluginIcon(): ReactElement {
+  return svg(
+    <path d="M6.2 2.4h3.6v2a1.4 1.4 0 1 0 2.8 0v-2h1.4v3.8h-2a1.4 1.4 0 1 0 0 2.8h2v4.6H9.8v-2a1.4 1.4 0 1 0-2.8 0v2H2.4V9.8h2a1.4 1.4 0 1 0 0-2.8h-2V2.4h3.8z" />,
+  );
+}
+
+/** 工作区（文件夹）。 */
+export function WorkspaceIcon(): ReactElement {
+  return svg(<path d="M2 4.2h4.2l1.4 1.8h6.4v7.2H2V4.2zM2 7.4h12" />);
+}
+
+/** 关于（信息圆）。 */
+export function InfoIcon(): ReactElement {
+  return svg(
+    <>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 7.2v4M8 4.8h.01" />
+    </>,
+  );
+}
+
+/* ----------------------------- 第九阶段二梯队：composer 工具条 ----------------------------- */
+
+/** 权限胶囊（盾形）。 */
+export function ShieldIcon(): ReactElement {
+  return svg(<path d="M8 1.8l5 2v4c0 3.2-2.1 5.2-5 6.4-2.9-1.2-5-3.2-5-6.4v-4l5-2zM5.8 8l1.6 1.6 2.8-3" />);
+}
+
+/** 思考胶囊（灯泡）。 */
+export function BrainIcon(): ReactElement {
+  return svg(
+    <>
+      <path d="M6.2 12.4h3.6M6.6 14h2.8M8 1.8a4 4 0 0 0-2.4 7.2c.5.4.8 1 .8 1.6h3.2c0-.6.3-1.2.8-1.6A4 4 0 0 0 8 1.8z" />
+    </>,
+  );
+}

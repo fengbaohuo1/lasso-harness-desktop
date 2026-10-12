@@ -36,15 +36,26 @@ export interface AgentMessageRequest {
   model?: string;
   /** A4：智能体画像码（per-message，空 = default 画像）。 */
   profile?: string;
+  /** P9-8：思考强度（空 = 跟随预设/模型默认）。 */
+  thinking?: ReasoningEffort;
   maxTokens?: number;
   temperature?: number;
   cwd?: string;
 }
 
-/** 智能体画像（A1/A4）：按场景裁运行开销的参数集（GET /api/harness/profiles）。 */
+/** P9-8：思考强度（null = 跟随模型默认）。 */
+export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high';
+
+/** 智能体预设（A1/A4 + P9-7，原「画像」）：按场景裁运行开销的参数集（GET /api/harness/profiles）。 */
 export interface AgentProfile {
   profileCode: string;
   displayName: string;
+  /** 预设说明（≤500 字）。 */
+  description: string | null;
+  /** 模型偏好（null = 跟随生效渠道）。 */
+  modelCode: string | null;
+  /** 思考强度（null = 跟随模型默认）。 */
+  reasoningEffort: ReasoningEffort | null;
   maxStepsPerTurn: number;
   maxTokenContinuations: number;
   contextTokenBudget: number;
@@ -63,6 +74,9 @@ export type AgentProfileInput = Partial<
   Pick<
     AgentProfile,
     | 'displayName'
+    | 'description'
+    | 'modelCode'
+    | 'reasoningEffort'
     | 'maxStepsPerTurn'
     | 'maxTokenContinuations'
     | 'contextTokenBudget'
@@ -103,6 +117,11 @@ export interface MetaEvent {
 
 /** chunk {content} */
 export interface ChunkEvent {
+  content: string;
+}
+
+/** thinking {content}（P9-8 预留）：思考增量，仅类型占位，UI 渲染由第二梯队实现。 */
+export interface ThinkingEvent {
   content: string;
 }
 
@@ -147,6 +166,7 @@ export interface SseErrorEvent {
 export type SseEventName =
   | 'meta'
   | 'chunk'
+  | 'thinking'
   | 'step_break'
   | 'tool_result'
   | 'finish'
@@ -157,6 +177,7 @@ export type SseEventName =
 export type SseEvent =
   | { event: 'meta'; data: MetaEvent }
   | { event: 'chunk'; data: ChunkEvent }
+  | { event: 'thinking'; data: ThinkingEvent }
   | { event: 'step_break'; data: StepBreakEvent }
   | { event: 'tool_result'; data: ToolResultEvent }
   | { event: 'finish'; data: FinishEvent }
@@ -167,6 +188,7 @@ export type SseEvent =
 export interface StreamHandlers {
   onMeta?: (event: MetaEvent) => void;
   onChunk?: (event: ChunkEvent) => void;
+  onThinking?: (event: ThinkingEvent) => void;
   onStepBreak?: (event: StepBreakEvent) => void;
   onToolResult?: (event: ToolResultEvent) => void;
   onFinish?: (event: FinishEvent) => void;
@@ -212,6 +234,10 @@ export interface ChatMessage {
   segments?: MsgSegment[];
   /** 重新生成中（F4）：流式期间在操作行显示 spinner。 */
   regenerating?: boolean;
+  /** P9-8：助手消息的思考内容（ReasoningBlock 折叠渲染）。 */
+  reasoning?: string;
+  /** P9-8：思考是否仍在流入（决定「思考中」标签与自动展开）。 */
+  reasoningStreaming?: boolean;
 }
 
 /** 启动链阶段。 */
@@ -231,7 +257,7 @@ export const APP_VERSION = '0.1.0';
 /** 时间字段兼容形状：epoch 毫秒或 ISO 字符串（后端 meta.json 两种都可能出）。 */
 export type TimeLike = number | string | null | undefined;
 
-/** GET /api/harness/console/sessions 条目（F3 起新增 title/createdAt/lastEventAt/eventCount，旧字段不动）。 */
+/** GET /api/harness/console/sessions 条目（F3 起新增 title/createdAt/lastEventAt/eventCount，旧字段不动；P9 新增工作区/预设/思考强度）。 */
 export interface SessionSummary {
   sessionId: string;
   events: number;
@@ -239,6 +265,40 @@ export interface SessionSummary {
   createdAt?: TimeLike;
   lastEventAt?: TimeLike;
   eventCount?: number;
+  workspaceCode?: string | null;
+  presetCode?: string | null;
+  reasoningEffort?: ReasoningEffort | null;
+}
+
+/* ----------------------- 第九阶段：工作区 / 会话设置（P9-1/P9-7/P9-8） ----------------------- */
+
+/** GET /api/harness/workspaces 条目。 */
+export interface WorkspaceItem {
+  workspaceCode: string;
+  displayName: string;
+  rootPath: string;
+  builtin: boolean;
+}
+
+/** GET /api/harness/console/sessions/{id}/settings（PATCH 合并语义同形状）。 */
+export interface SessionSettings {
+  sessionId: string;
+  workspaceCode: string | null;
+  presetCode: string | null;
+  reasoningEffort: ReasoningEffort | null;
+}
+
+/** PATCH /api/harness/console/sessions/{id}/settings 请求体（合并语义：缺省字段不改）。 */
+export interface SessionSettingsInput {
+  workspaceCode?: string | null;
+  presetCode?: string | null;
+  reasoningEffort?: ReasoningEffort | null;
+}
+
+/** GET /api/harness/workspaces/resolve?sessionId= 应答。 */
+export interface WorkspaceResolve {
+  sessionId: string;
+  cwd: string;
 }
 
 /** GET /api/harness/console/sessions/{id}/usage（F6：事件聚合；C3 状态栏扩展）。 */
@@ -272,6 +332,8 @@ export interface ConsoleMessage {
   role: 'USER' | 'ASSISTANT' | 'SYSTEM' | 'TOOL' | string;
   text: string;
   blocks: ConsoleToolBlock[];
+  /** P9-8：助手消息的思考内容（可空）。 */
+  reasoning?: string | null;
 }
 
 /** GET /api/harness/approvals/runtime/pending 条目（挂起-裁决）。 */

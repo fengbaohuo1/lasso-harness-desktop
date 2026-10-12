@@ -156,16 +156,15 @@ export default function PluginSettingsPanel(): ReactElement {
                 <td>{plugin.runtimeType}</td>
                 <td>
                   <span
-                    className={
+                    className={`status-dot${
                       plugin.status === 'ACTIVE'
-                        ? 'badge badge--active'
+                        ? ' status-dot--ok'
                         : plugin.status === 'FAILED'
-                          ? 'badge badge--danger'
-                          : 'badge badge--muted'
-                    }
-                  >
-                    {plugin.status}
-                  </span>
+                          ? ' status-dot--error'
+                          : ''
+                    }`}
+                    title={plugin.status}
+                  />
                 </td>
                 <td>{plugin.runtimeState}</td>
                 <td className="settings-table__actions">
@@ -224,7 +223,7 @@ export default function PluginSettingsPanel(): ReactElement {
               </tr>
               {contributions?.pluginId === plugin.pluginId ? (
                 <tr>
-                  <td colSpan={6}>
+                  <td className="settings-table__wide" colSpan={6}>
                     <div className="plugin-contrib">
                       <div>
                         <b>工具</b>
@@ -296,8 +295,16 @@ export default function PluginSettingsPanel(): ReactElement {
               <td>{item.pluginId}</td>
               <td>{item.version}</td>
               <td>{item.runtimeType}</td>
-              <td className="settings-table__path">{item.description || item.sourcePath}</td>
-              <td>{item.installed ? <span className="badge badge--active">已安装</span> : '—'}</td>
+              <td className="settings-table__desc" title={item.description || item.sourcePath}>
+                <span className="clamp-2">{item.description || item.sourcePath}</span>
+              </td>
+              <td>
+                {item.installed ? (
+                  <span className="status-dot status-dot--ok" title="已安装" />
+                ) : (
+                  '—'
+                )}
+              </td>
               <td>
                 {item.installed ? null : (
                   <button

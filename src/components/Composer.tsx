@@ -1,24 +1,23 @@
 /**
- * 输入区（F2 + C1/C2）：模型/画像 chip + 自动增高输入 + 发送/停止 + 草稿历史 +
- * `/` 命令面板（内置命令/插件命令/工具，SC1~SC3）与 `@` 文件提及候选（mentionProviders）。
- * - Enter 发送、Shift+Enter 换行；↑/↓ 召回历史草稿；IME 组合守卫保留；
- * - 浮层开着时 ↑↓/Enter/Tab/Esc 归浮层（选中=采纳/关闭）；
- * - `/` 仅在输入开头触发（命令语义），`@` 在空白后触发（提及语义）；
- * - action 命令走 onCommand 本地执行；prompt 命令填模板（{arg} 处留光标）；
- *   mode:'send' 直接发送；工具项插入工具引导文本；提及选中插 `@path`。
+ * 输入区（P9-4，对齐 dsh prompt-shell）：24px 圆角卡片 = textarea + 工具条。
+ * - 工具条左栏：工作区选择器（文件夹 + 名称 + chevron）+ 权限胶囊（盾 + 三档）；
+ * - 工具条右栏：模型胶囊 + 思考胶囊（跟随预设/关/低/中/高）+ 上下文圆环 + 发送/停止；
+ * - 保留：rows=1 自适应增高、Enter 发送 / Shift+Enter 换行、`/` `@` 浮层键盘导航、
+ *   历史草稿 ↑↓、IME 守卫；placeholder「输入消息 · / 命令 · @ 文件」。
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react';
 import InputPalette from './InputPalette';
 import type { PaletteEntry } from './InputPalette';
-import { SendIcon, StopIcon } from './icons';
+import { BrainIcon, ChevronIcon, SendIcon, ShieldIcon, StopIcon, WorkspaceIcon } from './icons';
 import { fillTemplate, filterSlashItems } from '../lib/commands';
 import type { PaletteState, SlashItem } from '../lib/commands';
 import { detectPaletteToken } from '../lib/commands';
 import { fetchMentionGroups } from '../lib/mentions';
 import type { MentionCandidate } from '../lib/mentions';
 import { usePluginUiMap } from '../lib/plugin-ui';
+import type { ReasoningEffort, WorkspaceItem } from '../types';
 
 /** 模型选项（数据源 GET /api/harness/settings/models）。 */
 export interface ComposerModelOption {
@@ -30,13 +29,20 @@ export interface ComposerModelOption {
   active?: boolean;
 }
 
-/** 画像选项（数据源 GET /api/harness/profiles，A4）。 */
-export interface ComposerProfileOption {
-  /** 传给 POST /api/agent/stream 的 profile 字段；空串 = 默认画像（default）。 */
-  value: string;
-  /** 展示名「名称（编码）」。 */
-  label: string;
-}
+/** 沙箱权限模式（P9-2，沙箱插件三档）。 */
+export type PermissionMode = 'READ_ONLY' | 'WORKSPACE_WRITE' | 'DANGER_FULL_ACCESS';
+
+export const PERMISSION_LABEL: Record<PermissionMode, string> = {
+  READ_ONLY: '只读（不限于工作区）',
+  WORKSPACE_WRITE: '工作区内读写',
+  DANGER_FULL_ACCESS: '完全权限',
+};
+
+const PERMISSION_TITLE: Record<PermissionMode, string> = {
+  READ_ONLY: '只读：写类工具与命令一律拒绝，读不受限',
+  WORKSPACE_WRITE: '工作区内读写：写路径限定会话工作区，命令受越逸约束',
+  DANGER_FULL_ACCESS: '完全权限：不做沙箱限制（危险操作仍走审批）',
+};
 
 export interface ComposerProps {
   /** 启动链未就绪时禁用输入。 */
@@ -50,11 +56,20 @@ export interface ComposerProps {
   /** 当前选择的 model 值；'' = 默认。 */
   selectedModel: string;
   onSelectModel: (model: string) => void;
-  /** 画像选项列表（首项由本组件补「默认画像」，A4）。 */
-  profiles?: ComposerProfileOption[];
-  /** 当前选择的画像码；'' = 默认画像。 */
-  selectedProfile?: string;
-  onSelectProfile?: (profile: string) => void;
+  /** P9-8：思考强度；null = 跟随预设。 */
+  thinking?: ReasoningEffort | null;
+  onSelectThinking?: (effort: ReasoningEffort | null) => void;
+  /** P9-1：工作区列表与当前选择（无会话时禁用选择器）。 */
+  workspaces?: WorkspaceItem[];
+  selectedWorkspace?: string | null;
+  onSelectWorkspace?: (workspaceCode: string) => void;
+  workspaceDisabled?: boolean;
+  /** P9-2：沙箱权限模式（会话级）。 */
+  permission?: PermissionMode;
+  onSelectPermission?: (mode: PermissionMode) => void;
+  /** P9-4：上下文圆环数据（contextTokens/contextBudget）。 */
+  contextTokens?: number;
+  contextBudget?: number | null;
   /** C1：命令面板数据（内置 + 插件 slashCommands + 工具目录）。 */
   slashItems?: SlashItem[];
   /** C1：action 型命令本地执行（new/settings/theme/help）。 */
@@ -75,6 +90,41 @@ interface PaletteRow {
   payload: SlashItem | MentionCandidate;
 }
 
+/** 上下文圆环（22×22 SVG，≥50% 黄、≥80% 红）。 */
+function ContextRing({ tokens, budget }: { tokens: number; budget: number | null }): ReactElement {
+  const ratio = budget && budget > 0 ? Math.min(1, tokens / budget) : 0;
+  const pct = Math.round(ratio * 100);
+  const color = ratio >= 0.8 ? 'var(--danger)' : ratio >= 0.5 ? 'var(--warning)' : 'var(--accent)';
+  const r = 8;
+  const circumference = 2 * Math.PI * r;
+  return (
+    <span
+      className="context-ring"
+      title={
+        budget
+          ? `上下文占用 ${tokens.toLocaleString()} / ${budget.toLocaleString()} tokens（${pct}%）`
+          : `上下文占用 ${tokens.toLocaleString()} tokens`
+      }
+    >
+      <svg viewBox="0 0 22 22" width="22" height="22" aria-hidden="true">
+        <circle cx="11" cy="11" r={r} fill="none" stroke="var(--border-strong)" strokeWidth="2.5" />
+        <circle
+          cx="11"
+          cy="11"
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth="2.5"
+          strokeDasharray={`${circumference * ratio} ${circumference}`}
+          strokeLinecap="round"
+          transform="rotate(-90 11 11)"
+        />
+      </svg>
+      <span className="context-ring__pct">{pct}</span>
+    </span>
+  );
+}
+
 export default function Composer({
   disabled,
   streaming,
@@ -82,9 +132,16 @@ export default function Composer({
   models,
   selectedModel,
   onSelectModel,
-  profiles = [],
-  selectedProfile = '',
-  onSelectProfile,
+  thinking = null,
+  onSelectThinking,
+  workspaces = [],
+  selectedWorkspace = null,
+  onSelectWorkspace,
+  workspaceDisabled = false,
+  permission = 'WORKSPACE_WRITE',
+  onSelectPermission,
+  contextTokens = 0,
+  contextBudget = null,
   slashItems = [],
   onCommand,
   focusToken = 0,
@@ -329,93 +386,144 @@ export default function Composer({
       : '输入消息 · / 命令 · @ 文件';
 
   return (
-    <form className="composer" onSubmit={handleSubmit}>
-      <div className="composer__toolbar">
-        <select
-          ref={modelSelectRef}
-          className="composer__model"
-          value={selectedModel}
-          aria-label="选择模型"
-          title="选择本次对话使用的模型（默认跟随生效渠道）"
-          onChange={(e) => onSelectModel(e.target.value)}
-        >
-          <option value="">默认（跟随生效渠道）</option>
-          {models.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.active ? `${option.label} · 生效` : option.label}
-            </option>
-          ))}
-        </select>
-        {onSelectProfile ? (
-          <select
-            className="composer__profile"
-            value={selectedProfile}
-            aria-label="选择智能体画像"
-            title="选择本次对话使用的画像：按场景裁步数/预算/工具面/提示词（默认 default）"
-            onChange={(e) => onSelectProfile(e.target.value)}
-          >
-            <option value="">默认画像（default）</option>
-            {profiles.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        ) : null}
-        <span className="composer__spacer" />
-      </div>
-      <div className="composer__row">
-        {palette ? (
-          <InputPalette
-            entries={paletteRows.map((row) => row.entry)}
-            selectedIndex={paletteIndex}
-            onHover={setPaletteIndex}
-            onPick={applyPaletteRow}
-            footer="↑↓ 选择 · Enter/Tab 采纳 · Esc 关闭"
-            emptyText={
-              palette.mode === 'slash'
-                ? '无匹配命令（/help 看全部）'
-                : '无匹配文件（继续输入可模糊过滤）'
-            }
-          />
-        ) : null}
-        <textarea
-          ref={textareaRef}
-          className="composer__input"
-          value={draft}
-          placeholder={placeholder}
-          disabled={disabled}
-          rows={1}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            syncPalette(e.target.value, e.target.selectionStart);
-          }}
-          onSelect={(e) => syncPalette(e.currentTarget.value, e.currentTarget.selectionStart)}
-          onKeyDown={handleKeyDown}
-          onBlur={() => setPalette(null)}
+    <form className="composer composer--shell" onSubmit={handleSubmit}>
+      {palette ? (
+        <InputPalette
+          entries={paletteRows.map((row) => row.entry)}
+          selectedIndex={paletteIndex}
+          onHover={setPaletteIndex}
+          onPick={applyPaletteRow}
+          footer="↑↓ 选择 · Enter/Tab 采纳 · Esc 关闭"
+          emptyText={
+            palette.mode === 'slash' ? '无匹配命令（/help 看全部）' : '无匹配文件（继续输入可模糊过滤）'
+          }
         />
-        <div className="composer__actions">
-          {streaming ? (
-            <button
-              type="button"
-              className="icon-btn icon-btn--stop"
-              title="停止生成"
-              aria-label="停止生成"
-              onClick={onStop}
+      ) : null}
+      <textarea
+        ref={textareaRef}
+        className="composer__input"
+        value={draft}
+        placeholder={placeholder}
+        disabled={disabled}
+        rows={1}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          syncPalette(e.target.value, e.target.selectionStart);
+        }}
+        onSelect={(e) => syncPalette(e.currentTarget.value, e.currentTarget.selectionStart)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => setPalette(null)}
+      />
+      <div className="composer__toolbar">
+        {/* 左栏：工作区 + 权限 */}
+        <div className="composer__toolbar-left">
+          <label className="composer-chip composer-chip--workspace" title="会话工作区（工具按此目录解析路径）">
+            <WorkspaceIcon />
+            <select
+              className="composer-chip__select"
+              value={selectedWorkspace ?? ''}
+              disabled={workspaceDisabled}
+              aria-label="选择工作区"
+              onChange={(e) => onSelectWorkspace?.(e.target.value)}
             >
-              <StopIcon />
-            </button>
-          ) : (
-            <button
-              type="submit"
-              className="icon-btn icon-btn--send"
-              title="发送（Enter）"
-              aria-label="发送"
-              disabled={!canSend}
+              {workspaces.length === 0 ? <option value="">默认工作区</option> : null}
+              {workspaces.map((workspace) => (
+                <option key={workspace.workspaceCode} value={workspace.workspaceCode}>
+                  {workspace.displayName}
+                </option>
+              ))}
+            </select>
+            <span className="composer-chip__chevron" aria-hidden="true">
+              <ChevronIcon />
+            </span>
+          </label>
+          <label
+            className={`composer-chip composer-chip--permission composer-chip--${permission.toLowerCase()}`}
+            title={PERMISSION_TITLE[permission]}
+          >
+            <ShieldIcon />
+            <select
+              className="composer-chip__select"
+              value={permission}
+              aria-label="工具执行权限"
+              onChange={(e) => onSelectPermission?.(e.target.value as PermissionMode)}
             >
-              <SendIcon />
-            </button>
-          )}
+              {Object.entries(PERMISSION_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <span className="composer-chip__chevron" aria-hidden="true">
+              <ChevronIcon />
+            </span>
+          </label>
+        </div>
+        {/* 右栏：模型 + 思考 + 圆环 + 发送 */}
+        <div className="composer__toolbar-right">
+          <label className="composer-chip" title="选择本次对话使用的模型（默认跟随生效渠道）">
+            <select
+              ref={modelSelectRef}
+              className="composer-chip__select"
+              value={selectedModel}
+              aria-label="选择模型"
+              onChange={(e) => onSelectModel(e.target.value)}
+            >
+              <option value="">模型 · 默认</option>
+              {models.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.active ? `${option.label} · 生效` : option.label}
+                </option>
+              ))}
+            </select>
+            <span className="composer-chip__chevron" aria-hidden="true">
+              <ChevronIcon />
+            </span>
+          </label>
+          {onSelectThinking ? (
+            <label className="composer-chip composer-chip--thinking" title="思考强度：低=更快响应、中=平衡、高=充分推理">
+              <BrainIcon />
+              <select
+                className="composer-chip__select"
+                value={thinking ?? ''}
+                aria-label="思考强度"
+                onChange={(e) => onSelectThinking((e.target.value || null) as ReasoningEffort | null)}
+              >
+                <option value="">思考 · 跟随</option>
+                <option value="off">思考 · 关</option>
+                <option value="low">思考 · 低</option>
+                <option value="medium">思考 · 中</option>
+                <option value="high">思考 · 高</option>
+              </select>
+              <span className="composer-chip__chevron" aria-hidden="true">
+                <ChevronIcon />
+              </span>
+            </label>
+          ) : null}
+          <ContextRing tokens={contextTokens} budget={contextBudget} />
+          <div className="composer__actions">
+            {streaming ? (
+              <button
+                type="button"
+                className="icon-btn icon-btn--stop"
+                title="停止生成"
+                aria-label="停止生成"
+                onClick={onStop}
+              >
+                <StopIcon />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className="icon-btn icon-btn--send"
+                title="发送（Enter）"
+                aria-label="发送"
+                disabled={!canSend}
+              >
+                <SendIcon />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </form>

@@ -55,7 +55,8 @@ export default function StatusBar({
         title="上下文占用：最近一次 LLM 调用的输入 tokens ÷ 画像 contextTokenBudget"
       >
         上下文 <b>{fmt(contextTokens)}</b>
-        {contextBudget ? <span className="status-bar__budget">/{fmt(contextBudget)}</span> : null}        {ratio != null ? (
+        {contextBudget ? <span className="status-bar__budget">/{fmt(contextBudget)}</span> : null}
+        {ratio != null ? (
           <span className="context-meter" aria-hidden="true">
             <span
               className={`context-meter__fill${ratio >= 0.9 ? ' context-meter__fill--hot' : ratio >= 0.7 ? ' context-meter__fill--warn' : ''}`}
@@ -68,8 +69,8 @@ export default function StatusBar({
       <span className="status-bar__chip status-bar__chip--dim" title="本次对话使用的模型">
         {modelLabel ?? '默认模型'}
       </span>
-      <span className="status-bar__chip status-bar__chip--dim" title="本次对话使用的智能体画像">
-        {profileLabel ?? '默认画像'}
+      <span className="status-bar__chip status-bar__chip--dim" title="本次对话使用的智能体预设">
+        {profileLabel ?? '默认预设'}
       </span>
     </footer>
   );

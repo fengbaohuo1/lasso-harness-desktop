@@ -139,13 +139,15 @@ export default function ToolCatalogPanel(): ReactElement {
               </td>
               <td className="settings-table__path">{tool.toolCode}</td>
               <td>{tool.displayName || '—'}</td>
-              <td className="settings-table__path">{tool.description || '—'}</td>
+              <td className="settings-table__desc" title={tool.description || ''}>
+                <span className="clamp-2">{tool.description || '—'}</span>
+              </td>
               <td>{tool.category || '—'}</td>
               <td>
                 {tool.requiresApproval ? (
                   <span className="badge badge--warn">需审批</span>
                 ) : (
-                  <span className="badge badge--muted">—</span>
+                  '—'
                 )}
               </td>
             </tr>

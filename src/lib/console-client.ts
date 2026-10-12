@@ -13,6 +13,8 @@ import type {
   PluginContributions,
   RuntimeApprovalDto,
   RuntimeQuestionDto,
+  SessionSettings,
+  SessionSettingsInput,
   SessionSummary,
   SessionUsage,
 } from '../types';
@@ -51,6 +53,24 @@ export function fetchSessionUsage(sessionId: string): Promise<SessionUsage> {
 /** 工具目录（C1 命令面板「工具」组数据源；A1 画像白名单管理同源）。 */
 export function fetchToolCatalog(): Promise<ToolCatalogItem[]> {
   return apiRequest<ToolCatalogItem[]>('/api/harness/tool-catalog');
+}
+
+/** P9：会话设置（工作区/预设/思考强度；PATCH 合并语义）。 */
+export function fetchSessionSettings(sessionId: string): Promise<SessionSettings> {
+  return apiRequest<SessionSettings>(
+    `/api/harness/console/sessions/${encodeURIComponent(sessionId)}/settings`,
+  );
+}
+
+export function updateSessionSettings(
+  sessionId: string,
+  patch: SessionSettingsInput,
+): Promise<SessionSettings> {
+  return apiRequest<SessionSettings>(
+    `/api/harness/console/sessions/${encodeURIComponent(sessionId)}/settings`,
+    'PATCH',
+    patch,
+  );
 }
 
 /** P8-1：强制压缩会话（/compact 指令）——Compacted 事件落盘。 */
@@ -171,6 +191,8 @@ export function toChatMessages(
         toolCards,
         segments,
         status: 'done',
+        // P9-8：思考内容随回放透传（渲染由第二梯队实现）
+        reasoning: message.reasoning ?? undefined,
       });
       continue;
     }

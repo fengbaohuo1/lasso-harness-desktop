@@ -12,9 +12,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import Composer from './components/Composer';
-import type { ComposerModelOption, ComposerProfileOption } from './components/Composer';
+import type { ComposerModelOption, PermissionMode } from './components/Composer';
 import ConversationView from './components/ConversationView';
 import type { QuickAction } from './components/ConversationView';
+import NewSessionDialog from './components/NewSessionDialog';
 import SettingsDialog from './components/SettingsDialog';
 import type { Tab } from './components/SettingsDialog';
 import Sidebar from './components/Sidebar';
@@ -25,6 +26,7 @@ import {
   AgentApiError,
   AgentRunCancelledError,
   StreamIdleError,
+  apiRequest,
   cancelAgentRun,
   fetchAgentStatus,
   startAgentProcess,
@@ -40,16 +42,18 @@ import {
   fetchPendingApprovals,
   fetchPendingQuestions,
   fetchSessionMessages,
+  fetchSessionSettings,
   fetchSessionUsage,
   fetchSessions,
   renameSession,
   resolveApproval,
   toChatMessages,
+  updateSessionSettings,
 } from './lib/console-client';
 import { exportTranscriptMarkdown } from './lib/export';
 import { expandMentions } from './lib/mentions';
 import { usePluginUiMap } from './lib/plugin-ui';
-import { listModelChannels, listProfiles } from './lib/settings-client';
+import { fetchWorkspaces, listModelChannels, listProfiles } from './lib/settings-client';
 import {
   THEME_MODE_LABEL,
   applyTheme,
@@ -66,11 +70,13 @@ import type {
   ApprovalVerdict,
   BootState,
   ChatMessage,
+  ReasoningEffort,
   RuntimeApprovalDto,
   RuntimeQuestionDto,
   SessionSummary,
   SessionUsage,
   ToolCardState,
+  WorkspaceItem,
 } from './types';
 
 /** 默认会话（与后端 agentId 语义一致）。 */
@@ -97,6 +103,30 @@ function describeError(err: unknown): string {
   return String(err);
 }
 
+/* ----------------------------- P9-2：沙箱权限（沙箱插件端点） ----------------------------- */
+
+async function fetchPermissionMode(sessionId: string): Promise<PermissionMode> {
+  try {
+    const data = await apiRequest<{ mode?: string }>(
+      `/api/harness/plugins/sandbox/api/mode?sessionId=${encodeURIComponent(sessionId)}`,
+    );
+    if (
+      data?.mode === 'READ_ONLY' ||
+      data?.mode === 'WORKSPACE_WRITE' ||
+      data?.mode === 'DANGER_FULL_ACCESS'
+    ) {
+      return data.mode;
+    }
+  } catch {
+    // 插件未启用/端点缺失：回落默认档
+  }
+  return 'WORKSPACE_WRITE';
+}
+
+async function putPermissionMode(sessionId: string, mode: PermissionMode): Promise<void> {
+  await apiRequest('/api/harness/plugins/sandbox/api/mode', 'PUT', { sessionId, mode });
+}
+
 export default function App(): ReactElement {
   const [boot, setBoot] = useState<BootState>({ phase: 'init' });
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
@@ -114,12 +144,17 @@ export default function App(): ReactElement {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [modelOptions, setModelOptions] = useState<ComposerModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
-  const [profileOptions, setProfileOptions] = useState<ComposerProfileOption[]>([]);
-  const [selectedProfile, setSelectedProfile] = useState('');
   const [profileDetails, setProfileDetails] = useState<AgentProfile[]>([]);
   const [usage, setUsage] = useState<SessionUsage | null>(null);
   const [focusToken, setFocusToken] = useState(0);
   const [modelFocusToken, setModelFocusToken] = useState(0);
+  // P9：工作区 / 会话预设 / 思考强度 / 沙箱权限（会话级）
+  const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
+  const [sessionPresetCode, setSessionPresetCode] = useState<string | null>(null);
+  const [sessionThinking, setSessionThinking] = useState<ReasoningEffort | null>(null);
+  const [permission, setPermission] = useState<PermissionMode>('WORKSPACE_WRITE');
+  const [showNewSession, setShowNewSession] = useState(false);
   const uiMap = usePluginUiMap();
 
   const bootStartedRef = useRef(false);
@@ -216,22 +251,21 @@ export default function App(): ReactElement {
     }
   }, []);
 
-  /** A4：画像选项（Composer chip 数据源）；详情留作状态栏上下文预算（SC6）。 */
+  /** P9-7：预设详情（新会话对话框卡片 + 状态栏上下文预算）。 */
   const refreshProfiles = useCallback(async () => {
     try {
-      const profiles = await listProfiles();
-      setProfileDetails(profiles);
-      setProfileOptions(
-        profiles
-          .filter((p) => p.profileCode !== 'default')
-          .map((p) => ({
-            value: p.profileCode,
-            label: `${p.displayName || p.profileCode}（${p.profileCode}）`,
-          })),
-      );
+      setProfileDetails(await listProfiles());
     } catch {
       setProfileDetails([]);
-      setProfileOptions([]);
+    }
+  }, []);
+
+  /** P9-1：工作区列表（新会话对话框 + composer 工作区选择器数据源）。 */
+  const refreshWorkspaces = useCallback(async () => {
+    try {
+      setWorkspaces(await fetchWorkspaces());
+    } catch {
+      setWorkspaces([]);
     }
   }, []);
 
@@ -244,8 +278,9 @@ export default function App(): ReactElement {
     void refreshSessions();
     void refreshModel();
     void refreshProfiles();
+    void refreshWorkspaces();
     void refreshUsage(agentId);
-  }, [boot.phase, refreshSessions, refreshModel, refreshProfiles, refreshUsage, agentId]);
+  }, [boot.phase, refreshSessions, refreshModel, refreshProfiles, refreshWorkspaces, refreshUsage, agentId]);
 
   // F3：30s 轻量轮询兜底（done 后另有主动刷新）
   useEffect(() => {
@@ -319,6 +354,15 @@ export default function App(): ReactElement {
         toast(describeError(err));
       }
       void refreshUsage(id);
+      // P9：恢复会话设置（工作区/预设/思考强度）与沙箱权限档
+      void fetchSessionSettings(id)
+        .then((settings) => {
+          setSelectedWorkspace(settings.workspaceCode ?? null);
+          setSessionPresetCode(settings.presetCode ?? null);
+          setSessionThinking(settings.reasoningEffort ?? null);
+        })
+        .catch(() => undefined);
+      void fetchPermissionMode(id).then(setPermission).catch(() => undefined);
     },
     [refreshUsage],
   );
@@ -338,7 +382,8 @@ export default function App(): ReactElement {
     [loadSession],
   );
 
-  const handleNewSession = useCallback(() => {
+  /** 裸建会话（不弹框）：删除会话后的回落与内部复用。 */
+  const startBlankSession = useCallback((presetCode?: string | null) => {
     abortRef.current?.abort();
     void cancelAgentRun(agentIdRef.current).catch(() => undefined);
     setStreaming(false);
@@ -358,8 +403,32 @@ export default function App(): ReactElement {
       },
       ...prev.filter((session) => session.sessionId !== id),
     ]);
+    setSessionPresetCode(presetCode ?? null);
     setFocusToken((prev) => prev + 1);
+    return id;
   }, []);
+
+  /** P9-7：＋新对话 → 新会话对话框（预设/思考强度/工作区，仅新会话可选）。 */
+  const handleNewSession = useCallback(() => {
+    setShowNewSession(true);
+  }, []);
+
+  const handleCreateSession = useCallback(
+    (presetCode: string | null, effort: ReasoningEffort | null, workspaceCode: string | null) => {
+      setShowNewSession(false);
+      const id = startBlankSession(presetCode);
+      setSessionThinking(effort);
+      setSelectedWorkspace(workspaceCode);
+      // P9-7：预设/思考强度/工作区绑定整个 session（中途不换预设）
+      void updateSessionSettings(id, {
+        presetCode,
+        reasoningEffort: effort,
+        workspaceCode,
+      }).catch((err) => toast(describeError(err)));
+      void fetchPermissionMode(id).then(setPermission).catch(() => undefined);
+    },
+    [startBlankSession],
+  );
 
   const handleRenameSession = useCallback(
     (id: string, title: string) => {
@@ -388,13 +457,13 @@ export default function App(): ReactElement {
               setMessages([]);
               void loadSession(next.sessionId);
             } else {
-              handleNewSession();
+              startBlankSession();
             }
           }
         })
         .catch((err) => toast(describeError(err)));
     },
-    [loadSession, handleNewSession],
+    [loadSession, startBlankSession],
   );
 
   /* ----------------------------- 发送 / 停止 / 重新生成 ----------------------------- */
@@ -484,13 +553,24 @@ export default function App(): ReactElement {
             message: expanded,
             // F2：per-message model 透传（空 = 跟随生效渠道）
             model: selectedModel || undefined,
-            // A4：per-message 画像透传（空 = default 画像）
-            profile: selectedProfile || undefined,
+            // P9-7：会话预设绑定（新会话时选定，整个 session 不换）
+            profile: sessionPresetCode ?? undefined,
+            // P9-8：思考强度（空 = 跟随预设/模型默认）
+            thinking: sessionThinking ?? undefined,
           },
           {
             onChunk: ({ content }) => {
               if (content) {
                 patchAssistant((m) => appendText(m, content));
+              }
+            },
+            onThinking: ({ content }) => {
+              // P9-8：思考增量累积进当前助手消息（ReasoningBlock 折叠展示）
+              if (content) {
+                patchAssistant((m) => ({
+                  reasoning: (m.reasoning ?? '') + content,
+                  reasoningStreaming: true,
+                }));
               }
             },
             onStepBreak: (e) => {
@@ -537,6 +617,7 @@ export default function App(): ReactElement {
                 text: e.text && e.text.length > 0 ? e.text : m.text,
                 status: 'done',
                 turn: e.turn,
+                reasoningStreaming: false,
               }));
             },
             onError: (e) => {
@@ -546,7 +627,9 @@ export default function App(): ReactElement {
           { signal: controller.signal },
         );
         // 流正常结束但没收到 done：兜底收束状态
-        patchAssistant((m) => (m.status === 'streaming' ? { status: 'done' } : {}));
+        patchAssistant((m) =>
+          m.status === 'streaming' ? { status: 'done', reasoningStreaming: false } : {},
+        );
       } catch (err) {
         if (err instanceof AgentRunCancelledError) {
           patchAssistant(() => ({ status: 'cancelled' }));
@@ -568,7 +651,7 @@ export default function App(): ReactElement {
           .catch(() => undefined);
       }
     },
-    [streaming, selectedModel, selectedProfile, refreshSessions, refreshUsage, uiMap],
+    [streaming, selectedModel, sessionPresetCode, sessionThinking, refreshSessions, refreshUsage, uiMap],
   );
 
   const handleStop = useCallback(() => {
@@ -596,14 +679,18 @@ export default function App(): ReactElement {
 
   /* ----------------------------- F4 快捷键 / 快捷入口 ----------------------------- */
 
-  const handleQuickAction = useCallback((action: QuickAction) => {
-    if (action === 'chat') {
-      setFocusToken((prev) => prev + 1);
-      return;
-    }
-    setSettingsTab(action === 'models' ? 'models' : action === 'plugins' ? 'plugins' : 'about');
-    setShowSettings(true);
-  }, []);
+  const handleQuickAction = useCallback(
+    (action: QuickAction) => {
+      if (action === 'chat') {
+        // P9-7：开始对话 = 新会话对话框（预设/思考强度/工作区）
+        handleNewSession();
+        return;
+      }
+      setSettingsTab(action === 'models' ? 'models' : action === 'plugins' ? 'plugins' : 'about');
+      setShowSettings(true);
+    },
+    [handleNewSession],
+  );
 
   /* ----------------------------- C1 斜杠命令（action 本地执行） ----------------------------- */
 
@@ -702,13 +789,13 @@ export default function App(): ReactElement {
     [uiMap],
   );
 
-  // C3 状态栏：上下文预算取所选画像（缺省 default），模型/画像展示名
+  // C3 状态栏：上下文预算取会话预设（P9-7，缺省 default）
   const contextBudget = useMemo(() => {
-    const code = selectedProfile || 'default';
+    const code = sessionPresetCode || 'default';
     return profileDetails.find((p) => p.profileCode === code)?.contextTokenBudget ?? null;
-  }, [profileDetails, selectedProfile]);
-  const profileLabel = selectedProfile
-    ? profileOptions.find((p) => p.value === selectedProfile)?.label ?? selectedProfile
+  }, [profileDetails, sessionPresetCode]);
+  const profileLabel = sessionPresetCode
+    ? profileDetails.find((p) => p.profileCode === sessionPresetCode)?.displayName ?? sessionPresetCode
     : null;
 
   return (
@@ -760,12 +847,22 @@ export default function App(): ReactElement {
       {showSettings && bootReady ? (
         <SettingsDialog
           initialTab={settingsTab}
+          serviceRunning={bootReady}
           onClose={() => {
             setShowSettings(false);
             void refreshModel();
             void refreshProfiles();
             void refreshSessions();
           }}
+        />
+      ) : null}
+
+      {showNewSession && bootReady ? (
+        <NewSessionDialog
+          profiles={profileDetails}
+          workspaces={workspaces}
+          onCancel={() => setShowNewSession(false)}
+          onConfirm={handleCreateSession}
         />
       ) : null}
 
@@ -813,9 +910,24 @@ export default function App(): ReactElement {
               models={modelOptions}
               selectedModel={selectedModel}
               onSelectModel={setSelectedModel}
-              profiles={profileOptions}
-              selectedProfile={selectedProfile}
-              onSelectProfile={setSelectedProfile}
+              thinking={sessionThinking}
+              onSelectThinking={setSessionThinking}
+              workspaces={workspaces}
+              selectedWorkspace={selectedWorkspace}
+              onSelectWorkspace={(code) => {
+                setSelectedWorkspace(code);
+                void updateSessionSettings(agentIdRef.current, { workspaceCode: code }).catch((err) =>
+                  toast(describeError(err)),
+                );
+              }}
+              workspaceDisabled={false}
+              permission={permission}
+              onSelectPermission={(mode) => {
+                setPermission(mode);
+                void putPermissionMode(agentIdRef.current, mode).catch((err) => toast(describeError(err)));
+              }}
+              contextTokens={usage?.contextTokens ?? 0}
+              contextBudget={contextBudget}
               slashItems={slashItems}
               onCommand={handleCommand}
               focusToken={focusToken}

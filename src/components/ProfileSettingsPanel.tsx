@@ -1,25 +1,44 @@
 /**
- * 智能体画像管理（A4）：画像列表 + 新建/编辑表单（步数/预算/工具画像/提示词补丁）+ 删除保护。
+ * 智能体预设管理（A4 + P9-7，原「画像」）：预设列表 + 新建/编辑表单
+ * （描述/模型偏好/思考强度/步数/预算/工具画像/提示词补丁）+ 删除保护。
  * - 保存走 PUT /api/harness/profiles/{code}（部分字段 upsert，缺省沿用原值），成功/失败 toast；
- * - `default` 画像禁删（后端 40000，前端提前拦截提示）；
+ * - `default` 预设禁删（后端 40000，前端提前拦截提示）；
  * - toolProfile 是工具目录画像码（R5 白名单）——文本输入 + 说明；
- * - 数值字段空值按后端缺省回落；maxTokens / temperature 可空（跟随引擎默认）。
+ * - 数值字段空值按后端缺省回落；maxTokens / temperature / modelCode / reasoningEffort 可空（跟随默认）。
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { AgentProfile, AgentProfileInput } from '../types';
-import { deleteProfile, listProfiles, saveProfile } from '../lib/settings-client';
+import type { AgentProfile, AgentProfileInput, ReasoningEffort } from '../types';
+import {
+  deleteProfile,
+  listModelChannels,
+  listProfiles,
+  saveProfile,
+} from '../lib/settings-client';
 import { toast } from '../lib/toast';
 
 const DEFAULT_PROFILE_CODE = 'default';
 const MAX_PROMPT_EXTRA = 4000;
+const MAX_DESCRIPTION = 500;
+
+/** 思考强度选项（'' = 跟随模型默认 → null）。 */
+const REASONING_EFFORT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '', label: '默认（跟随模型）' },
+  { value: 'off', label: '关闭' },
+  { value: 'low', label: '低' },
+  { value: 'medium', label: '中' },
+  { value: 'high', label: '高' },
+];
 
 interface FormState {
-  /** 新建时可编辑；编辑既有画像时锁定。 */
+  /** 新建时可编辑；编辑既有预设时锁定。 */
   profileCode: string;
   isNew: boolean;
   displayName: string;
+  description: string;
+  modelCode: string;
+  reasoningEffort: string;
   maxStepsPerTurn: string;
   maxTokenContinuations: string;
   contextTokenBudget: string;
@@ -36,6 +55,9 @@ function toForm(profile: AgentProfile): FormState {
     profileCode: profile.profileCode,
     isNew: false,
     displayName: profile.displayName ?? '',
+    description: profile.description ?? '',
+    modelCode: profile.modelCode ?? '',
+    reasoningEffort: profile.reasoningEffort ?? '',
     maxStepsPerTurn: String(profile.maxStepsPerTurn ?? ''),
     maxTokenContinuations: String(profile.maxTokenContinuations ?? ''),
     contextTokenBudget: String(profile.contextTokenBudget ?? ''),
@@ -53,6 +75,9 @@ function emptyForm(): FormState {
     profileCode: '',
     isNew: true,
     displayName: '',
+    description: '',
+    modelCode: '',
+    reasoningEffort: '',
     maxStepsPerTurn: '50',
     maxTokenContinuations: '4',
     contextTokenBudget: '128000',
@@ -80,6 +105,7 @@ function parseNumberField(value: string, integer: boolean): number | undefined |
 
 export default function ProfileSettingsPanel(): ReactElement {
   const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const [modelCodes, setModelCodes] = useState<string[]>([]);
   const [form, setForm] = useState<FormState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,9 +119,20 @@ export default function ProfileSettingsPanel(): ReactElement {
     }
   }, []);
 
+  // 模型偏好下拉：已配置模型渠道的 modelCode（去重）
+  const refreshModels = useCallback(async () => {
+    try {
+      const channels = await listModelChannels();
+      setModelCodes([...new Set(channels.map((c) => c.modelCode).filter(Boolean))]);
+    } catch {
+      setModelCodes([]);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    void refreshModels();
+  }, [refresh, refreshModels]);
 
   const patchForm = (patch: Partial<FormState>): void => {
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -107,7 +144,11 @@ export default function ProfileSettingsPanel(): ReactElement {
     }
     const code = form.profileCode.trim();
     if (!code) {
-      toast('画像编码不能为空');
+      toast('预设编码不能为空');
+      return;
+    }
+    if (form.description.length > MAX_DESCRIPTION) {
+      toast(`说明最长 ${MAX_DESCRIPTION} 字`);
       return;
     }
     if (form.promptExtra.length > MAX_PROMPT_EXTRA) {
@@ -141,9 +182,13 @@ export default function ProfileSettingsPanel(): ReactElement {
       toast('数值字段需为非负整数（可留空）');
       return;
     }
+    const reasoningEffort = (form.reasoningEffort || null) as ReasoningEffort | null;
 
     const input: AgentProfileInput = {
       displayName: form.displayName.trim(),
+      description: form.description.trim(),
+      modelCode: form.modelCode.trim() || null,
+      reasoningEffort,
       maxStepsPerTurn: steps,
       maxTokenContinuations: continuations,
       contextTokenBudget: budget,
@@ -157,7 +202,7 @@ export default function ProfileSettingsPanel(): ReactElement {
     setBusy(true);
     try {
       await saveProfile(code, input);
-      toast(`画像 ${code} 已保存`);
+      toast(`预设 ${code} 已保存`);
       setForm(null);
       await refresh();
     } catch (err) {
@@ -169,16 +214,16 @@ export default function ProfileSettingsPanel(): ReactElement {
 
   const handleDelete = async (profile: AgentProfile): Promise<void> => {
     if (profile.profileCode === DEFAULT_PROFILE_CODE) {
-      toast('default 默认画像不可删除');
+      toast('default 默认预设不可删除');
       return;
     }
-    if (!window.confirm(`确认删除画像「${profile.displayName || profile.profileCode}」？`)) {
+    if (!window.confirm(`确认删除预设「${profile.displayName || profile.profileCode}」？`)) {
       return;
     }
     setBusy(true);
     try {
       await deleteProfile(profile.profileCode);
-      toast(`画像 ${profile.profileCode} 已删除`);
+      toast(`预设 ${profile.profileCode} 已删除`);
       if (form?.profileCode === profile.profileCode) {
         setForm(null);
       }
@@ -196,7 +241,7 @@ export default function ProfileSettingsPanel(): ReactElement {
 
       <div className="settings-toolbar">
         <span className="settings-toolbar__hint">
-          画像按场景裁运行开销（步数/预算/工具白名单/提示词补丁）；Composer 里可按消息选择。
+          预设按场景裁运行开销（模型偏好/思考强度/步数/预算/工具白名单/提示词补丁）；新会话可选不同预设。
         </span>
         <button
           type="button"
@@ -204,7 +249,7 @@ export default function ProfileSettingsPanel(): ReactElement {
           disabled={busy}
           onClick={() => setForm(emptyForm())}
         >
-          新建画像
+          新建预设
         </button>
       </div>
 
@@ -213,6 +258,7 @@ export default function ProfileSettingsPanel(): ReactElement {
           <tr>
             <th>名称</th>
             <th>编码</th>
+            <th>说明</th>
             <th>步数</th>
             <th>工具画像</th>
             <th>补丁摘要</th>
@@ -228,6 +274,9 @@ export default function ProfileSettingsPanel(): ReactElement {
                 {profile.profileCode === DEFAULT_PROFILE_CODE ? (
                   <span className="badge badge--active">默认</span>
                 ) : null}
+              </td>
+              <td className="settings-table__desc" title={profile.description ?? ''}>
+                <span className="clamp-2">{profile.description || '—'}</span>
               </td>
               <td>{profile.maxStepsPerTurn}</td>
               <td>{profile.toolProfile}</td>
@@ -253,8 +302,8 @@ export default function ProfileSettingsPanel(): ReactElement {
                   disabled={busy}
                   title={
                     profile.profileCode === DEFAULT_PROFILE_CODE
-                      ? 'default 默认画像不可删除'
-                      : '删除画像'
+                      ? 'default 默认预设不可删除'
+                      : '删除预设'
                   }
                   onClick={() => void handleDelete(profile)}
                 >
@@ -265,7 +314,7 @@ export default function ProfileSettingsPanel(): ReactElement {
           ))}
           {profiles.length === 0 ? (
             <tr>
-              <td colSpan={6}>加载中或暂无画像…</td>
+              <td colSpan={7}>加载中或暂无预设…</td>
             </tr>
           ) : null}
         </tbody>
@@ -273,14 +322,14 @@ export default function ProfileSettingsPanel(): ReactElement {
 
       {form ? (
         <div className="settings-form">
-          <h3>{form.isNew ? '新建画像' : `编辑画像 ${form.profileCode}`}</h3>
+          <h3>{form.isNew ? '新建预设' : `编辑预设 ${form.profileCode}`}</h3>
 
           <label className="settings-form__row">
-            <span>画像编码 *</span>
+            <span>预设编码 *</span>
             <input
               value={form.profileCode}
               disabled={!form.isNew || busy}
-              placeholder="如 faq、ops-triage（消息里按此码选择）"
+              placeholder="如 faq、ops-triage（新会话可选）"
               onChange={(e) => patchForm({ profileCode: e.target.value })}
             />
           </label>
@@ -292,6 +341,49 @@ export default function ProfileSettingsPanel(): ReactElement {
               disabled={busy}
               onChange={(e) => patchForm({ displayName: e.target.value })}
             />
+          </label>
+
+          <label className="settings-form__row">
+            <span>说明（{form.description.length}/{MAX_DESCRIPTION}）</span>
+            <textarea
+              value={form.description}
+              disabled={busy}
+              rows={2}
+              maxLength={MAX_DESCRIPTION}
+              placeholder="一句话说明该预设的用途与风格"
+              onChange={(e) => patchForm({ description: e.target.value })}
+            />
+          </label>
+
+          <label className="settings-form__row">
+            <span>模型偏好</span>
+            <select
+              value={form.modelCode}
+              disabled={busy}
+              onChange={(e) => patchForm({ modelCode: e.target.value })}
+            >
+              <option value="">默认（跟随生效渠道）</option>
+              {modelCodes.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="settings-form__row">
+            <span>思考强度</span>
+            <select
+              value={form.reasoningEffort}
+              disabled={busy}
+              onChange={(e) => patchForm({ reasoningEffort: e.target.value })}
+            >
+              {REASONING_EFFORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="settings-form__row">
@@ -369,7 +461,7 @@ export default function ProfileSettingsPanel(): ReactElement {
               onChange={(e) => patchForm({ toolProfile: e.target.value })}
             />
             <small>
-              接工具目录画像白名单（harness_tool_profile_binding）：决定本画像下模型可见的工具面；
+              接工具目录画像白名单（harness_tool_profile_binding）：决定本预设下模型可见的工具面；
               填该画像的编码，留空按 default。
             </small>
           </label>

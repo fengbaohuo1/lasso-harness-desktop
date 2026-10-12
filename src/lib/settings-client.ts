@@ -4,7 +4,12 @@
  */
 
 import { apiRequest } from './agent-client';
-import type { AgentProfile, AgentProfileInput } from '../types';
+import type {
+  AgentProfile,
+  AgentProfileInput,
+  WorkspaceItem,
+  WorkspaceResolve,
+} from '../types';
 
 /* ----------------------------- 类型 ----------------------------- */
 
@@ -211,5 +216,51 @@ export function deleteProfile(profileCode: string): Promise<void> {
   return apiRequest<void>(
     `/api/harness/profiles/${encodeURIComponent(profileCode)}`,
     'DELETE',
+  );
+}
+
+/* ----------------------------- 工作区（P9-1） ----------------------------- */
+
+export interface WorkspaceInput {
+  displayName: string;
+  rootPath: string;
+}
+
+export interface WorkspacePatch {
+  displayName?: string;
+  rootPath?: string;
+}
+
+export function fetchWorkspaces(): Promise<WorkspaceItem[]> {
+  return apiRequest<WorkspaceItem[]>('/api/harness/workspaces');
+}
+
+export function createWorkspace(input: WorkspaceInput): Promise<WorkspaceItem> {
+  return apiRequest<WorkspaceItem>('/api/harness/workspaces', 'POST', input);
+}
+
+export function updateWorkspace(
+  workspaceCode: string,
+  patch: WorkspacePatch,
+): Promise<WorkspaceItem> {
+  return apiRequest<WorkspaceItem>(
+    `/api/harness/workspaces/${encodeURIComponent(workspaceCode)}`,
+    'PUT',
+    patch,
+  );
+}
+
+/** 删除工作区；内置工作区禁删（后端 40000，错误信息经 toast 呈现）。 */
+export function deleteWorkspace(workspaceCode: string): Promise<void> {
+  return apiRequest<void>(
+    `/api/harness/workspaces/${encodeURIComponent(workspaceCode)}`,
+    'DELETE',
+  );
+}
+
+/** 解析会话当前工作区（cwd）。 */
+export function resolveWorkspace(sessionId: string): Promise<WorkspaceResolve> {
+  return apiRequest<WorkspaceResolve>(
+    `/api/harness/workspaces/resolve?sessionId=${encodeURIComponent(sessionId)}`,
   );
 }
