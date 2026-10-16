@@ -74,7 +74,20 @@ const server = http.createServer((req, res) => {
   }
   if (req.url.startsWith('/v1/models')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ data: [{ id: 'fake-model' }, { id: 'fake-vision-model' }] }));
+    // 混入一组小米 MiMo 的模型名：用来验证规格目录（1M/128K）与非对话模型（ASR/TTS）的标记。
+    const ids = [
+      'fake-model',
+      'fake-vision-model',
+      'mimo-v2.6-flash',
+      'mimo-v2.6-pro',
+      'mimo-v2.6-pro-ultraspeed',
+      'mimo-v2.5',
+      'mimo-v2.5-asr',
+      'mimo-v2.5-tts',
+      'mimo-v2.5-tts-voiceclone',
+      'mimo-v2.5-tts-voicedesign',
+    ];
+    res.end(JSON.stringify({ data: ids.map((id) => ({ id })) }));
     return;
   }
   res.writeHead(404);

@@ -104,8 +104,31 @@ function specToForm(spec: ModelSpecInfo): ModelFormState {
   };
 }
 
+const MEGA = 1024 * 1024;
+
+/**
+ * 规格的紧凑显示。
+ * <p>厂商文档里的数字有两套约定混用：既写 `128K`（= 128000）也写 `1M / 128K`（= 1048576 / 131072），
+ * 所以不能固定用 1000 或 1024 去除——固定 1000 会把 1M 显示成 `1049K`，固定 1024 会把 128000 显示成 `125K`。
+ * 做法：算出 1000 与 1024 两个候选，取更接近整数的那个（打平时用 1000，因为 `128K` 更常见）。
+ */
 function compactNumber(value: number): string {
-  return value >= 1000 ? `${Math.round(value / 1000)}K` : String(value);
+  if (value >= MEGA) {
+    const millions = value / MEGA;
+    const rounded = Math.round(millions);
+    if (Math.abs(millions - rounded) < 0.05) {
+      return `${rounded}M`;
+    }
+    return `${millions.toFixed(1)}M`;
+  }
+  if (value < 1000) {
+    return String(value);
+  }
+  const decimal = value / 1000;
+  const binary = value / 1024;
+  const decimalGap = Math.abs(decimal - Math.round(decimal));
+  const binaryGap = Math.abs(binary - Math.round(binary));
+  return `${Math.round(binaryGap < decimalGap ? binary : decimal)}K`;
 }
 
 export default function ModelSettingsPanel(): ReactElement {
@@ -119,6 +142,8 @@ export default function ModelSettingsPanel(): ReactElement {
   const [notice, setNotice] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<ModelTestResult | null>(null);
   const [discovered, setDiscovered] = useState<ModelSpecInfo[]>([]);
+  /** 发现在列表里勾选的模型编码（批量添加用）。 */
+  const [picked, setPicked] = useState<string[]>([]);
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -344,6 +369,13 @@ export default function ModelSettingsPanel(): ReactElement {
         protocol: channelForm?.protocol || current?.protocol,
       });
       setDiscovered(list);
+      // 默认勾选「还没添加过的对话模型」——用户点「发现模型」多半就是想批量加，逐个勾太累。
+      const existing = new Set((current?.models ?? []).map((model) => model.modelCode));
+      setPicked(
+        list
+          .filter((spec) => spec.chatModel !== false && !existing.has(spec.modelCode))
+          .map((spec) => spec.modelCode),
+      );
       if (list.length === 0) {
         setNotice('上游没有返回可发现的模型');
       }
@@ -354,24 +386,47 @@ export default function ModelSettingsPanel(): ReactElement {
     }
   };
 
-  /** 从发现结果一键挂到当前渠道下（规格来自后端内置目录，用户可再编辑）。 */
-  const handleAddDiscovered = async (spec: ModelSpecInfo): Promise<void> => {
+  const togglePicked = (modelCode: string): void => {
+    setPicked((prev) =>
+      prev.includes(modelCode) ? prev.filter((code) => code !== modelCode) : [...prev, modelCode],
+    );
+  };
+
+  /** 发现结果里可勾选的项（已在本渠道下的不可选）。 */
+  const pickable = discovered.filter(
+    (spec) => !(current?.models ?? []).some((model) => model.modelCode === spec.modelCode),
+  );
+  const allPicked = pickable.length > 0 && pickable.every((spec) => picked.includes(spec.modelCode));
+
+  /** 批量把勾选的模型挂到当前渠道下（一次请求整份清单回写）。 */
+  const handleAddPicked = async (): Promise<void> => {
     if (!current) {
       setError('请先选择或新建一个渠道，再添加模型');
       return;
     }
-    const existing = current.models ?? [];
-    if (existing.some((m) => m.modelCode === spec.modelCode)) {
-      setError(`模型 ${spec.modelCode} 已在该渠道下`);
+    const specs = discovered.filter((spec) => picked.includes(spec.modelCode));
+    if (specs.length === 0) {
+      setError('请先勾选要添加的模型');
       return;
     }
-    const item = toModelItem(specToForm(spec));
-    const list = existing.length === 0 ? [{ ...item, isDefault: true }] : [...existing, item];
+    const existing = current.models ?? [];
+    const added = specs
+      .filter((spec) => !existing.some((model) => model.modelCode === spec.modelCode))
+      .map((spec) => toModelItem(specToForm(spec)));
+    if (added.length === 0) {
+      setError('勾选的模型都已在当前渠道下');
+      return;
+    }
+    const list = [...existing, ...added];
+    if (!list.some((model) => model.isDefault)) {
+      list[0] = { ...list[0], isDefault: true };
+    }
     await persistModels(
       current,
       list,
-      `已添加模型 ${spec.modelCode}（窗口 ${compactNumber(spec.contextWindow)}，最大输出 ${compactNumber(spec.maxOutputTokens)}）`,
+      `已添加 ${added.length} 个模型：${added.map((model) => model.modelCode).join('、')}`,
     );
+    setPicked([]);
   };
 
   const handleActivate = async (channelCode: string): Promise<void> => {
@@ -708,29 +763,66 @@ export default function ModelSettingsPanel(): ReactElement {
           {discovered.length > 0 ? (
             <div className="discovery">
               <div className="discovery__head">
-                <span>上游返回 {discovered.length} 个模型（规格来自内置目录，known 表示已收录）</span>
-                <button type="button" className="btn btn--small" onClick={() => setDiscovered([])}>
-                  收起
-                </button>
+                <span>
+                  上游返回 {discovered.length} 个模型（规格来自内置目录，known 表示已收录）
+                </span>
+                <div className="discovery__acts">
+                  <button
+                    type="button"
+                    className="btn btn--small"
+                    disabled={busy || pickable.length === 0}
+                    onClick={() => setPicked(allPicked ? [] : pickable.map((spec) => spec.modelCode))}
+                  >
+                    {allPicked ? '全不选' : '全选'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--small btn--primary"
+                    disabled={busy || picked.length === 0}
+                    onClick={() => void handleAddPicked()}
+                  >
+                    添加选中（{picked.length}）
+                  </button>
+                  <button type="button" className="btn btn--small" onClick={() => setDiscovered([])}>
+                    收起
+                  </button>
+                </div>
               </div>
               <div className="discovery__list">
-                {discovered.map((spec) => (
-                  <button
-                    key={spec.modelCode}
-                    type="button"
-                    className="discovery__item"
-                    disabled={busy}
-                    title={spec.note || undefined}
-                    onClick={() => void handleAddDiscovered(spec)}
-                  >
-                    <span className="discovery__name">{spec.modelCode}</span>
-                    <span className="discovery__spec">
-                      {compactNumber(spec.contextWindow)} 窗口 · {compactNumber(spec.maxOutputTokens)} 输出
-                      {(spec.inputModalities ?? []).includes('image') ? ' · 图片' : ''}
-                    </span>
-                    {spec.known ? null : <span className="discovery__tag">推测</span>}
-                  </button>
-                ))}
+                {discovered.map((spec) => {
+                  const added = (current?.models ?? []).some((model) => model.modelCode === spec.modelCode);
+                  const selected = picked.includes(spec.modelCode);
+                  return (
+                    <label
+                      key={spec.modelCode}
+                      className={`discovery__item${selected ? ' discovery__item--on' : ''}${
+                        added ? ' discovery__item--added' : ''
+                      }`}
+                      title={spec.note || undefined}
+                    >
+                      <input
+                        type="checkbox"
+                        className="discovery__check"
+                        checked={selected}
+                        disabled={busy || added}
+                        onChange={() => togglePicked(spec.modelCode)}
+                      />
+                      <span className="discovery__name">{spec.modelCode}</span>
+                      <span className="discovery__spec">
+                        {spec.chatModel === false
+                          ? '非对话模型 · 规格不适用'
+                          : `${compactNumber(spec.contextWindow)} 窗口 · ${compactNumber(
+                              spec.maxOutputTokens,
+                            )} 输出${(spec.inputModalities ?? []).includes('image') ? ' · 图片' : ''}`}
+                      </span>
+                      {spec.chatModel === false ? <span className="discovery__tag">非对话</span> : null}
+                      {spec.chatModel !== false && !spec.known ? (
+                        <span className="discovery__tag">推测</span>
+                      ) : null}
+                      {added ? <span className="discovery__tag discovery__tag--ok">已添加</span> : null}
+                    </label>
+                  );
+                })}
               </div>
             </div>
           ) : null}

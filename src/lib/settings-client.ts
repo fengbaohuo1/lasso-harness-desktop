@@ -52,6 +52,8 @@ export interface ModelSpecInfo {
   inputModalities: string[];
   outputModalities: string[];
   known: boolean;
+  /** 是否为对话模型：ASR / TTS / 向量等模型也会出现在上游清单里，但不参与对话、规格也不适用。 */
+  chatModel?: boolean;
   note: string;
 }
 

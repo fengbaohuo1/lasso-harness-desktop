@@ -3657,8 +3657,19 @@ body {
 }
 
 .discovery__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   font-size: 12px;
   color: var(--text-faint);
+}
+
+.discovery__acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .discovery__list {
@@ -3687,6 +3698,26 @@ body {
   color: var(--text);
 }
 
+/* 勾选态：让「待添加」一眼可见 */
+.discovery__item--on {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.discovery__item--added {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.discovery__check {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: inherit;
+}
+
 .discovery__name {
   color: var(--text);
   font-family: var(--mono);
@@ -3703,6 +3734,11 @@ body {
   background: var(--warning-bg);
   color: var(--warning);
   font-size: 11px;
+}
+
+.discovery__tag--ok {
+  background: var(--success-bg);
+  color: var(--success);
 }
 
 /* ------------------------- banner 补充 ------------------------- */
