@@ -234,10 +234,13 @@ function Segments({
 
 function MessageBlock({
   message,
+  isTurnEnd,
   showRegenerate,
   onRegenerate,
 }: {
   message: ChatMessage;
+  /** P11-14：本轮回答的最后一条助手消息（下一步就是用户消息）。 */
+  isTurnEnd: boolean;
   showRegenerate: boolean;
   onRegenerate?: () => void;
 }): ReactElement | null {
@@ -258,6 +261,17 @@ function MessageBlock({
   ) {
     return null;
   }
+  // P11-14：助手侧的时间戳 / 复制 / 重新生成只在「本轮回答结束的汇总」上出现。
+  // 中间步骤（工具调用、思考）挂一行 meta 会在工具行前后各留一段空白，
+  // 而步骤中的文本也不是最终答案，没有复制的意义。
+  const showCopy = isTurnEnd && copyText.trim().length > 0 && message.status !== 'streaming';
+  const showAssistantMeta =
+    !isUser &&
+    (showCopy ||
+      message.status === 'error' ||
+      message.status === 'cancelled' ||
+      message.regenerating ||
+      Boolean(showRegenerate && onRegenerate));
   return (
     <div className={`message-row message-row--${isUser ? 'user' : 'assistant'}`}>
       {isUser ? (
@@ -305,32 +319,34 @@ function MessageBlock({
             <div className="bubble__error">{message.error}</div>
           ) : null}
 
-          <div className="message-meta">
-            {timeLabel(message.createdAt)}
-            {message.status === 'cancelled' ? ' · 已停止' : ''}
-            {message.status === 'error' ? ' · 出错' : ''}
-            {copyText ? <CopyTextButton text={copyText} /> : null}
-            {message.regenerating && message.status === 'streaming' ? (
-              <button
-                type="button"
-                className="message-meta__action message-meta__action--busy"
-                disabled
-                title="正在重新生成"
-              >
-                <RefreshIcon /> 生成中…
-              </button>
-            ) : null}
-            {showRegenerate && onRegenerate ? (
-              <button
-                type="button"
-                className="message-meta__action"
-                title="重新生成：重发上一条用户消息"
-                onClick={onRegenerate}
-              >
-                <RefreshIcon /> 重新生成
-              </button>
-            ) : null}
-          </div>
+          {showAssistantMeta ? (
+            <div className="message-meta">
+              {timeLabel(message.createdAt)}
+              {message.status === 'cancelled' ? ' · 已停止' : ''}
+              {message.status === 'error' ? ' · 出错' : ''}
+              {showCopy ? <CopyTextButton text={copyText} /> : null}
+              {message.regenerating && message.status === 'streaming' ? (
+                <button
+                  type="button"
+                  className="message-meta__action message-meta__action--busy"
+                  disabled
+                  title="正在重新生成"
+                >
+                  <RefreshIcon /> 生成中…
+                </button>
+              ) : null}
+              {showRegenerate && onRegenerate ? (
+                <button
+                  type="button"
+                  className="message-meta__action"
+                  title="重新生成：重发上一条用户消息"
+                  onClick={onRegenerate}
+                >
+                  <RefreshIcon /> 重新生成
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       )}
     </div>
@@ -439,6 +455,9 @@ export default function ConversationView({
               <MessageBlock
                 key={message.id}
                 message={message}
+                isTurnEnd={
+                  index === messages.length - 1 || messages[index + 1].role === 'user'
+                }
                 showRegenerate={
                   index === lastAssistantIndex &&
                   index === messages.length - 1 &&

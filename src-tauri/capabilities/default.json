@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "JNF Desktop 主窗口最小权限面：窗口拖拽 + 主题同步（P11-12）+ 仅 127.0.0.1 的 HTTP 兜底通道",
+  "description": "JNF Desktop 主窗口最小权限面：窗口拖拽 + 主题同步（P11-12）/ 读取系统主题（P11-14）+ 仅 127.0.0.1 的 HTTP 兜底通道",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
+    "core:window:allow-theme",
     {
       "identifier": "http:default",
       "allow": [{ "url": "http://127.0.0.1:*/*" }]

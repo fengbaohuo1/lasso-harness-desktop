@@ -250,7 +250,9 @@ body {
 /* ----------------------------- 消息流 ----------------------------- */
 
 /* P11-14：行距整体收紧——此前 16px 的列间距 + 6px/6px 的行内边距 + 每条消息独立的
-   时间戳行，会让「工具调用」这种单行内容前后各空出一大片，看着像没挨着。 */
+   时间戳行，会让「工具调用」这种单行内容前后各空出一大片，看着像没挨着。
+   P11-14（第二轮）：间距改为按相邻关系给——同一轮回答里的相邻步骤只隔 2px
+   （思考/工具/正文挨着），轮与轮之间才留 6px。 */
 .conversation {
   flex: 1;
   min-height: 0;
@@ -258,7 +260,15 @@ body {
   padding: 16px 16px 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
+}
+
+.message-row + .message-row {
+  margin-top: 6px;
+}
+
+.message-row--assistant + .message-row--assistant {
+  margin-top: 2px;
 }
 
 
@@ -272,9 +282,12 @@ body {
   white-space: pre-wrap;
 }
 
+/* P11-14：用户气泡改用跟随主题的面色（原先固定 accent 蓝，深色下过于抢眼，
+   也和 dsh 的「浅一档灰面」不一致）。 */
 .bubble--user {
-  background: var(--accent-strong);
-  color: var(--on-accent);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border-card);
   border-bottom-right-radius: var(--radius-xs);
   max-width: 72%;
 }
@@ -866,6 +879,12 @@ body {
 
 .bubble:hover .bubble__copy {
   opacity: 1;
+}
+
+/* P11-14：助手侧 meta 行只出现在「本轮汇总」上，行里的复制默认淡显（不再是
+   opacity:0 的隐形按钮）——否则那一行只剩空白，看着又是工具调用后面的一块空当。 */
+.message-meta .bubble__copy {
+  opacity: 0.55;
 }
 
 .message-meta:hover .bubble__copy,

@@ -71,10 +71,13 @@ import {
   applyTheme,
   loadThemeMode,
   nextThemeMode,
+  readNativeSystemTheme,
   saveThemeMode,
+  setNativeSystemTheme,
+  watchNativeTheme,
   watchSystemTheme,
 } from './lib/theme';
-import type { ThemeMode } from './lib/theme';
+import type { ResolvedTheme, ThemeMode } from './lib/theme';
 import { toast } from './lib/toast';
 import type {
   AgentStatus,
@@ -196,6 +199,42 @@ export default function App(): ReactElement {
     }
     return watchSystemTheme(() => applyTheme('system'));
   }, [themeMode]);
+
+  const themeModeRef = useRef(themeMode);
+  themeModeRef.current = themeMode;
+
+  // P11-14：跟随系统时以「原生窗口主题」为准。
+  // 启动时 WebView 的 prefers-color-scheme 可能报的是窗口默认色（亮），
+  // 这里读一次真值并订阅系统切换，只在 system 模式下重刷页面配色。
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    const adopt = (theme: ResolvedTheme): void => {
+      setNativeSystemTheme(theme);
+      if (themeModeRef.current === 'system') {
+        applyTheme('system');
+      }
+    };
+    void (async () => {
+      const native = await readNativeSystemTheme();
+      if (cancelled) {
+        return;
+      }
+      if (native) {
+        adopt(native);
+      }
+      const off = await watchNativeTheme(adopt);
+      if (cancelled) {
+        off();
+        return;
+      }
+      unlisten = off;
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const handleToggleTheme = useCallback(() => {
     setThemeMode((prev) => nextThemeMode(prev));
