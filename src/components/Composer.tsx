@@ -1,32 +1,60 @@
 /**
  * 输入区（P9-4，对齐 dsh prompt-shell）：24px 圆角卡片 = textarea + 工具条。
- * - 工具条左栏：工作区选择器（文件夹 + 名称 + chevron）+ 权限胶囊（盾 + 三档）；
- * - 工具条右栏：模型胶囊 + 思考胶囊（跟随预设/关/低/中/高）+ 上下文圆环 + 发送/停止；
+ * - 工具条左栏：@ 引用 + 图片 + 工作区选择器 + 权限胶囊；
+ * - 工具条右栏：模型胶囊（ModelPicker 浮层）+ 思考胶囊 + 发送/停止；
  * - 保留：rows=1 自适应增高、Enter 发送 / Shift+Enter 换行、`/` `@` 浮层键盘导航、
- *   历史草稿 ↑↓、IME 守卫；placeholder「输入消息 · / 命令 · @ 文件」。
+ *   历史草稿 ↑↓、IME 守卫；placeholder「输入消息 · / 命令 · @ 文件 · 粘贴图片」；
+ * - P11-8：粘贴 / 选图 / 拖入 → 待发缩略图条（可删），发送时随消息以 base64 上传。
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react';
 import InputPalette from './InputPalette';
 import type { PaletteEntry } from './InputPalette';
-import { BrainIcon, ChevronIcon, MentionIcon, SendIcon, ShieldIcon, StopIcon, WorkspaceIcon } from './icons';
+import ModelPicker from './ModelPicker';
+import type { ModelPickerOption } from './ModelPicker';
+import {
+  BrainIcon,
+  ChevronIcon,
+  CloseIcon,
+  ImageIcon,
+  MentionIcon,
+  SendIcon,
+  ShieldIcon,
+  StopIcon,
+  WorkspaceIcon,
+} from './icons';
 import { fillTemplate, filterSlashItems } from '../lib/commands';
 import type { PaletteState, SlashItem } from '../lib/commands';
 import { detectPaletteToken } from '../lib/commands';
 import { fetchMentionGroups } from '../lib/mentions';
 import type { MentionCandidate } from '../lib/mentions';
 import { usePluginUiMap } from '../lib/plugin-ui';
-import type { ReasoningEffort, WorkspaceItem } from '../types';
+import type { ImageDraft, ReasoningEffort, WorkspaceItem } from '../types';
 
-/** 模型选项（数据源 GET /api/harness/settings/models）。 */
+/** 单张图片上限（与后端 FileAttachmentStore.DEFAULT_MAX_BYTES 对齐）。 */
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+function uid(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** 模型选项（数据源 GET /api/harness/settings/models/catalog，P11-1 起模型是渠道子资源）。 */
 export interface ComposerModelOption {
-  /** 传给 POST /api/agent/stream 的 model 字段；空串 = 默认（跟随生效渠道）。 */
+  /** 传给 POST /api/agent/stream 的 model 字段，形如 `channelCode::modelCode`；空串 = 默认（跟随生效渠道）。 */
   value: string;
-  /** 展示名「渠道 · 模型」。 */
+  /** 模型编码（列表主文案）。 */
   label: string;
-  /** 生效渠道打徽标。 */
+  channelCode: string;
+  /** 渠道显示名（分组头）。 */
+  channelLabel: string;
+  /** 所属渠道是生效渠道。 */
   active?: boolean;
+  /** 渠道默认模型。 */
+  isDefault?: boolean;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  inputModalities?: string[];
 }
 
 /** 沙箱权限模式（P9-2，沙箱插件三档）。 */
@@ -67,9 +95,6 @@ export interface ComposerProps {
   /** P9-2：沙箱权限模式（会话级）。 */
   permission?: PermissionMode;
   onSelectPermission?: (mode: PermissionMode) => void;
-  /** P9-4：上下文圆环数据（contextTokens/contextBudget）。 */
-  contextTokens?: number;
-  contextBudget?: number | null;
   /** C1：命令面板数据（内置 + 插件 slashCommands + 工具目录）。 */
   slashItems?: SlashItem[];
   /** C1：action 型命令本地执行（new/settings/theme/help）。 */
@@ -78,7 +103,7 @@ export interface ComposerProps {
   focusToken?: number;
   /** P8-1：/model 指令——变化时聚焦模型选择（行为控制不进消息）。 */
   modelFocusToken?: number;
-  onSend: (text: string) => void | Promise<void>;
+  onSend: (text: string, attachments?: ImageDraft[]) => void | Promise<void>;
   onStop: () => void;
 }
 
@@ -88,41 +113,6 @@ const MAX_INPUT_HEIGHT = 200;
 interface PaletteRow {
   entry: PaletteEntry;
   payload: SlashItem | MentionCandidate;
-}
-
-/** 上下文圆环（22×22 SVG，≥50% 黄、≥80% 红）。 */
-function ContextRing({ tokens, budget }: { tokens: number; budget: number | null }): ReactElement {
-  const ratio = budget && budget > 0 ? Math.min(1, tokens / budget) : 0;
-  const pct = Math.round(ratio * 100);
-  const color = ratio >= 0.8 ? 'var(--danger)' : ratio >= 0.5 ? 'var(--warning)' : 'var(--accent)';
-  const r = 8;
-  const circumference = 2 * Math.PI * r;
-  return (
-    <span
-      className="context-ring"
-      title={
-        budget
-          ? `上下文占用 ${tokens.toLocaleString()} / ${budget.toLocaleString()} tokens（${pct}%）`
-          : `上下文占用 ${tokens.toLocaleString()} tokens`
-      }
-    >
-      <svg viewBox="0 0 22 22" width="22" height="22" aria-hidden="true">
-        <circle cx="11" cy="11" r={r} fill="none" stroke="var(--border-strong)" strokeWidth="2.5" />
-        <circle
-          cx="11"
-          cy="11"
-          r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth="2.5"
-          strokeDasharray={`${circumference * ratio} ${circumference}`}
-          strokeLinecap="round"
-          transform="rotate(-90 11 11)"
-        />
-      </svg>
-      <span className="context-ring__pct">{pct}</span>
-    </span>
-  );
 }
 
 export default function Composer({
@@ -140,8 +130,6 @@ export default function Composer({
   workspaceDisabled = false,
   permission = 'WORKSPACE_WRITE',
   onSelectPermission,
-  contextTokens = 0,
-  contextBudget = null,
   slashItems = [],
   onCommand,
   focusToken = 0,
@@ -154,11 +142,78 @@ export default function Composer({
   const [palette, setPalette] = useState<PaletteState | null>(null);
   const [paletteIndex, setPaletteIndex] = useState(0);
   const [mentionItems, setMentionItems] = useState<MentionCandidate[]>([]);
+  /** P11-8：待发图片（粘贴/选图/拖入）。 */
+  const [images, setImages] = useState<ImageDraft[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const modelSelectRef = useRef<HTMLSelectElement | null>(null);
   const uiMap = usePluginUiMap();
 
-  const canSend = !disabled && !streaming && draft.trim() !== '';
+  const canSend = !disabled && !streaming && (draft.trim() !== '' || images.length > 0);
+
+  /**
+   * P11-8：把 File 列表读成 data URI 待发附件。
+   * 上限与后端 FileAttachmentStore 对齐（8MB / 张，只收图片），超限与非法类型当场提示而不是等后端报错。
+   */
+  const addImageFiles = useCallback(async (files: File[]): Promise<void> => {
+    const accepted: ImageDraft[] = [];
+    const problems: string[] = [];
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        problems.push(`${file.name || '文件'} 不是图片`);
+        continue;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        problems.push(`${file.name || '图片'} 超过 8MB`);
+        continue;
+      }
+      const data = await new Promise<string | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      });
+      if (!data) {
+        problems.push(`${file.name || '图片'} 读取失败`);
+        continue;
+      }
+      accepted.push({
+        id: uid(),
+        mediaType: file.type || 'image/png',
+        data,
+        name: file.name,
+        bytes: file.size,
+      });
+    }
+    if (accepted.length > 0) {
+      setImages((prev) => [...prev, ...accepted]);
+    }
+    setImageError(problems.length > 0 ? problems.join('；') : null);
+  }, []);
+
+  // P11-9：模型选择器的选项与触发器文案（selectedModel 为 `渠道::模型` 或 ''）
+  const modelPickerOptions: ModelPickerOption[] = useMemo(
+    () =>
+      models.map((option) => ({
+        value: option.value,
+        label: option.label,
+        channelCode: option.channelCode,
+        channelLabel: option.channelLabel,
+        channelActive: option.active,
+        isDefault: option.isDefault,
+        contextWindow: option.contextWindow,
+        maxOutputTokens: option.maxOutputTokens,
+        imageInput: (option.inputModalities ?? []).includes('image'),
+      })),
+    [models],
+  );
+  const activeModelOption = models.find((option) => option.value === selectedModel) ?? null;
+  const activeModelLabel = activeModelOption
+    ? activeModelOption.label
+    : selectedModel
+      ? selectedModel
+      : '默认';
 
   // F2：textarea 自动增高（约 200px 后出滚动条）
   useEffect(() => {
@@ -177,12 +232,7 @@ export default function Composer({
     }
   }, [focusToken]);
 
-  // P8-1：/model 指令 → 聚焦模型选择
-  useEffect(() => {
-    if (modelFocusToken > 0) {
-      modelSelectRef.current?.focus();
-    }
-  }, [modelFocusToken]);
+  // P8-1：/model 指令 → 展开模型选择浮层（ModelPicker 自己监听 focusToken）
 
   // C2：@ 候选防抖拉取（150ms；provider 失败静默跳过）
   useEffect(() => {
@@ -306,13 +356,17 @@ export default function Composer({
 
   const submit = (): void => {
     const text = draft.trim();
-    if (!text || !canSend) {
+    // P11-8：只有图片没有文字也允许发送（后端 AgentMessageCommand 允许 attachments 单独成消息）
+    if ((!text && images.length === 0) || !canSend) {
       return;
     }
+    const attachments = images.length > 0 ? images : undefined;
     setDraft('');
+    setImages([]);
+    setImageError(null);
     setHistoryIndex(null);
     setPalette(null);
-    void onSend(text);
+    void onSend(text, attachments);
     textareaRef.current?.focus();
   };
 
@@ -383,10 +437,57 @@ export default function Composer({
     ? 'Agent 尚未就绪…'
     : streaming
       ? '生成中…'
-      : '输入消息 · / 命令 · @ 文件';
+      : '输入消息 · / 命令 · @ 文件 · 粘贴图片';
 
   return (
-    <form className="composer composer--shell" onSubmit={handleSubmit}>
+    <form
+      className={`composer composer--shell${dragging ? ' composer--dragging' : ''}`}
+      onSubmit={handleSubmit}
+      onDragOver={(e) => {
+        // P11-8：拖入图片 —— 只在真的带文件时才接管，避免影响文本拖拽
+        if (disabled || !Array.from(e.dataTransfer.types).includes('Files')) {
+          return;
+        }
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          return;
+        }
+        setDragging(false);
+      }}
+      onDrop={(e) => {
+        if (disabled) {
+          return;
+        }
+        const files = Array.from(e.dataTransfer.files ?? []);
+        if (files.length > 0) {
+          e.preventDefault();
+          setDragging(false);
+          void addImageFiles(files);
+        }
+      }}
+    >
+      {images.length > 0 ? (
+        <div className="composer__images">
+          {images.map((image) => (
+            <span key={image.id} className="composer__image" title={image.name ?? image.mediaType}>
+              <img src={image.data} alt={image.name ?? '待发图片'} />
+              <button
+                type="button"
+                className="composer__image-remove"
+                title="移除这张图片"
+                aria-label="移除图片"
+                onClick={() => setImages((prev) => prev.filter((item) => item.id !== image.id))}
+              >
+                <CloseIcon />
+              </button>
+            </span>
+          ))}
+          <span className="composer__images-hint">发送时会随消息一起上传</span>
+        </div>
+      ) : null}
       {palette ? (
         <InputPalette
           entries={paletteRows.map((row) => row.entry)}
@@ -412,11 +513,49 @@ export default function Composer({
         }}
         onSelect={(e) => syncPalette(e.currentTarget.value, e.currentTarget.selectionStart)}
         onKeyDown={handleKeyDown}
+        onPaste={(e) => {
+          // P11-8：剪贴板里的图片（截图/复制的图片文件）直接进待发附件；纯文本照旧走默认粘贴
+          const files = Array.from(e.clipboardData?.items ?? [])
+            .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+            .map((item) => item.getAsFile())
+            .filter((file): file is File => file != null);
+          if (files.length > 0) {
+            e.preventDefault();
+            void addImageFiles(files);
+          }
+        }}
         onBlur={() => setPalette(null)}
       />
+      {imageError ? (
+        <div className="banner banner--error composer__image-error">{imageError}</div>
+      ) : null}
       <div className="composer__toolbar">
-        {/* 左栏：@ 引用 + 工作区 + 权限 */}
+        {/* 左栏：@ 引用 + 图片 + 工作区 + 权限 */}
         <div className="composer__toolbar-left">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              e.target.value = '';
+              if (files.length > 0) {
+                void addImageFiles(files);
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="icon-btn composer__at"
+            title="添加图片（也可直接粘贴或拖入）"
+            aria-label="添加图片"
+            disabled={disabled}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <ImageIcon />
+          </button>
           <button
             type="button"
             className="icon-btn composer__at"
@@ -476,28 +615,15 @@ export default function Composer({
         </div>
         {/* 右栏：模型 + 思考 + 圆环 + 发送 */}
         <div className="composer__toolbar-right">
-          <label className="composer-chip" title="选择本次对话使用的模型（默认跟随生效渠道）">
-                        {models.some((option) => option.value === selectedModel && option.active) ? (
-              <span className="status-dot status-dot--on" title="生效中" aria-hidden="true" />
-            ) : null}
-            <select
-              ref={modelSelectRef}
-              className="composer-chip__select"
-              value={selectedModel}
-              aria-label="选择模型"
-              onChange={(e) => onSelectModel(e.target.value)}
-            >
-              <option value="">默认</option>
-              {models.map((option) => (
-                <option key={option.value} value={option.value} title={option.label}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <span className="composer-chip__chevron" aria-hidden="true">
-              <ChevronIcon />
-            </span>
-          </label>
+          <ModelPicker
+            options={modelPickerOptions}
+            value={selectedModel}
+            activeLabel={activeModelLabel}
+            activeDot={models.some((option) => option.value === selectedModel && option.active)}
+            disabled={disabled}
+            focusToken={modelFocusToken}
+            onChange={onSelectModel}
+          />
           {onSelectThinking ? (
             <label className="composer-chip composer-chip--thinking" title="思考强度：低=更快响应、中=平衡、高=充分推理">
               <BrainIcon />
@@ -518,7 +644,7 @@ export default function Composer({
               </span>
             </label>
           ) : null}
-          <ContextRing tokens={contextTokens} budget={contextBudget} />
+          {/* P11-10 / D11-9：上下文占用只保留状态栏一处，这里的圆环已删 */}
           <div className="composer__actions">
             {streaming ? (
               <button

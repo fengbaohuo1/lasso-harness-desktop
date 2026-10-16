@@ -236,6 +236,23 @@ function MessageBlock({
     <div className={`message-row message-row--${isUser ? 'user' : 'assistant'}`}>
       {isUser ? (
         <div className="bubble bubble--user">
+          {/* P11-8：图片附件缩略图（点击看原图） */}
+          {message.images && message.images.length > 0 ? (
+            <div className="bubble__images">
+              {message.images.map((image) => (
+                <a
+                  key={image.id}
+                  className="bubble__image"
+                  href={image.data}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={image.name ?? '查看原图'}
+                >
+                  <img src={image.data} alt={image.name ?? '图片附件'} />
+                </a>
+              ))}
+            </div>
+          ) : null}
           <Segments message={message} isUser />
           <div className="bubble__meta">
             {timeLabel(message.createdAt)}

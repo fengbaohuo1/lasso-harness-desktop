@@ -220,3 +220,14 @@ export function MentionIcon(): ReactElement {
     </>,
   );
 }
+
+/** P11-8：图片（相框 + 山 + 太阳）。 */
+export function ImageIcon(): ReactElement {
+  return svg(
+    <>
+      <rect x="2.5" y="3" width="11" height="10" rx="1.6" />
+      <circle cx="5.9" cy="6.4" r="1.1" />
+      <path d="M3 11.2l3-2.6 2.4 2 2-1.7 3.1 2.7" />
+    </>,
+  );
+}

@@ -9,6 +9,7 @@ import type {
   ApprovalVerdict,
   ChatMessage,
   ConsoleMessage,
+  ContextBreakdown,
   MsgSegment,
   PluginContributions,
   RuntimeApprovalDto,
@@ -43,10 +44,17 @@ export function deleteSession(sessionId: string): Promise<void> {
   );
 }
 
-/** 会话用量（F6 契约：事件聚合，无 usage 时全 0；C3 扩展 steps/toolCalls/contextTokens/compactions）。 */
+/** 会话用量（F6 契约：事件聚合，无 usage 时全 0；C3 扩展 steps/toolCalls/contextTokens/compactions；P11-5 扩展缓存与速度）。 */
 export function fetchSessionUsage(sessionId: string): Promise<SessionUsage> {
   return apiRequest<SessionUsage>(
     `/api/harness/console/sessions/${encodeURIComponent(sessionId)}/usage`,
+  );
+}
+
+/** P11-10：上下文成分估算（系统提示词/摘要/各角色消息 token 数与预览）。 */
+export function fetchSessionContext(sessionId: string): Promise<ContextBreakdown> {
+  return apiRequest<ContextBreakdown>(
+    `/api/harness/console/sessions/${encodeURIComponent(sessionId)}/context`,
   );
 }
 

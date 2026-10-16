@@ -26,6 +26,7 @@ import {
   type StreamHandlers,
   type ThinkingEvent,
   type ToolResultEvent,
+  type UsageEvent,
 } from '../types';
 
 /** 流式空闲看门狗默认超时：120 秒。 */
@@ -348,6 +349,7 @@ function isSseEventName(value: unknown): value is SseEventName {
     value === 'thinking' ||
     value === 'step_break' ||
     value === 'tool_result' ||
+    value === 'usage' ||
     value === 'finish' ||
     value === 'done' ||
     value === 'error'
@@ -393,6 +395,10 @@ function dispatchSseFrame(
       return {};
     case 'tool_result':
       handlers.onToolResult?.(payload as ToolResultEvent);
+      return {};
+    case 'usage':
+      // P11-5：每次 LLM 调用后的用量快照（上下文占用/缓存命中/速度都从这来）
+      handlers.onUsage?.(payload as UsageEvent);
       return {};
     case 'finish':
       handlers.onFinish?.(payload as FinishEvent);

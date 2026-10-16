@@ -14,7 +14,12 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
-    watch: { ignored: ["**/src-tauri/**"] },
+    watch: {
+      // src-tauri 由 cargo 自己监听（Tauri CLI 会重启应用）。
+      // 另两种是编辑器/工具原子写盘时的临时目录（`.App.tsx.1234.xxxx.tmpdir/`）：
+      // 它们存在时间极短，被 chokidar 抓到会以 EBUSY 崩掉整个 dev server（实测过），必须挡掉。
+      ignored: ["**/src-tauri/**", "**/*.tmpdir/**", "**/*.tmp"],
+    },
   },
   build: {
     target: "es2017",

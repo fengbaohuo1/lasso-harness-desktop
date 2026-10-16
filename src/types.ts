@@ -29,6 +29,18 @@ export interface AgentStatus {
   status?: string;
 }
 
+/** P11-9：待发/已发图片附件（前端形态；data 为 data URI）。 */
+export interface ImageDraft {
+  id: string;
+  mediaType: string;
+  /** `data:image/png;base64,...`（FileReader.readAsDataURL 产物，后端两种都收）。 */
+  data: string;
+  /** 原始文件名（仅展示）。 */
+  name?: string;
+  /** 字节数（仅展示）。 */
+  bytes?: number;
+}
+
 /** /api/agent/message 与 /api/agent/stream 的请求体。 */
 export interface AgentMessageRequest {
   agentId: string;
@@ -41,6 +53,8 @@ export interface AgentMessageRequest {
   maxTokens?: number;
   temperature?: number;
   cwd?: string;
+  /** P11-9：图片附件（{mediaType, data}，data 为裸 base64 或 data URI）。 */
+  attachments?: Array<{ mediaType: string; data: string }>;
 }
 
 /** P9-8：思考强度（null = 跟随模型默认）。 */
@@ -162,6 +176,23 @@ export interface SseErrorEvent {
   message: string;
 }
 
+/** P11-5：usage 事件（每次 LLM 调用后由后端推送）。 */
+export interface UsageEvent {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedTokens: number;
+  /** 缓存命中率（0~1；promptTokens 为 0 时是 0）。 */
+  cacheHitRate: number;
+  llmCalls: number;
+  /** 最近一次调用的耗时（毫秒）。 */
+  elapsedMs: number;
+  /** 最近一次调用的生成速度（token/s；无样本时 0）。 */
+  tokensPerSecond: number;
+  /** 最近一次调用的输入 tokens（= 当前上下文占用）。 */
+  lastPromptTokens: number;
+}
+
 /** SSE 事件名。以 ":" 开头的注释帧（keepalive）会被忽略，不进入此联合。 */
 export type SseEventName =
   | 'meta'
@@ -169,6 +200,7 @@ export type SseEventName =
   | 'thinking'
   | 'step_break'
   | 'tool_result'
+  | 'usage'
   | 'finish'
   | 'done'
   | 'error';
@@ -180,6 +212,7 @@ export type SseEvent =
   | { event: 'thinking'; data: ThinkingEvent }
   | { event: 'step_break'; data: StepBreakEvent }
   | { event: 'tool_result'; data: ToolResultEvent }
+  | { event: 'usage'; data: UsageEvent }
   | { event: 'finish'; data: FinishEvent }
   | { event: 'done'; data: DoneEvent }
   | { event: 'error'; data: SseErrorEvent };
@@ -191,6 +224,7 @@ export interface StreamHandlers {
   onThinking?: (event: ThinkingEvent) => void;
   onStepBreak?: (event: StepBreakEvent) => void;
   onToolResult?: (event: ToolResultEvent) => void;
+  onUsage?: (event: UsageEvent) => void;
   onFinish?: (event: FinishEvent) => void;
   onDone?: (event: DoneEvent) => void;
   onError?: (event: SseErrorEvent) => void;
@@ -238,6 +272,8 @@ export interface ChatMessage {
   reasoning?: string;
   /** P9-8：思考是否仍在流入（决定「思考中」标签与自动展开）。 */
   reasoningStreaming?: boolean;
+  /** P11-8：本条消息携带的图片（用户消息用，气泡内渲染缩略图）。 */
+  images?: ImageDraft[];
 }
 
 /** 启动链阶段。 */
@@ -325,11 +361,19 @@ export interface WorkspaceDeleteResult {
   unboundSessions: number;
 }
 
-/** GET /api/harness/console/sessions/{id}/usage（F6：事件聚合；C3 状态栏扩展）。 */
+/** GET /api/harness/console/sessions/{id}/usage（F6：事件聚合；C3 状态栏扩展；P11-5 补缓存与速度）。 */
 export interface SessionUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  /** P11-5：命中缓存的 prompt token 数。 */
+  cachedTokens: number;
+  /** P11-5：缓存命中率（0~1）。 */
+  cacheHitRate: number;
+  /** P11-5：最近一次 LLM 调用耗时（毫秒）。 */
+  elapsedMs: number;
+  /** P11-5：最近一次调用的生成速度（token/s）。 */
+  tokensPerSecond: number;
   turns: number;
   /** 步数（StepEnd 事件计数）。 */
   steps: number;
@@ -339,6 +383,28 @@ export interface SessionUsage {
   contextTokens: number;
   /** 上下文压缩次数（Compacted 事件计数）。 */
   compactions: number;
+}
+
+/** GET /api/harness/console/sessions/{id}/context 的单个成分条目。 */
+export interface ContextItem {
+  role: string;
+  turn: number;
+  step: number;
+  chars: number;
+  tokens: number;
+  preview: string;
+}
+
+/** GET /api/harness/console/sessions/{id}/context：上下文成分估算（P11-10）。 */
+export interface ContextBreakdown {
+  estimatedTokens: number;
+  systemTokens: number;
+  summaryTokens: number;
+  userTokens: number;
+  assistantTokens: number;
+  reasoningTokens: number;
+  toolResultTokens: number;
+  messages: ContextItem[];
 }
 
 /** 会话回放中的工具条目（tool_call / tool_result）。 */

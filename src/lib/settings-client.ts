@@ -26,6 +26,49 @@ export interface ModelChannel {
   enabled: boolean;
   active: boolean;
   hasApiKey: boolean;
+  /** P11-1：渠道下挂的具体模型（旧的单模型字段 modelCode 退化为「渠道默认模型」）。 */
+  models?: ModelItem[];
+}
+
+/** 渠道下的单个模型（P11-1 分层：渠道=连接与密钥，模型=规格与能力）。 */
+export interface ModelItem {
+  modelCode: string;
+  displayName: string;
+  contextWindow: number;
+  maxOutputTokens: number;
+  inputModalities: string[];
+  outputModalities: string[];
+  enabled: boolean;
+  isDefault: boolean;
+  sortOrder?: number;
+}
+
+/** 模型规格（P11-2）：发现模型时后端按内置目录补全规格，known=false 表示启发式猜测。 */
+export interface ModelSpecInfo {
+  modelCode: string;
+  displayName: string;
+  contextWindow: number;
+  maxOutputTokens: number;
+  inputModalities: string[];
+  outputModalities: string[];
+  known: boolean;
+  note: string;
+}
+
+/** 扁平模型清单（P11-3）：选择器按渠道分组渲染。 */
+export interface ModelCatalogItem {
+  ref: string;
+  channelCode: string;
+  channelDisplayName: string;
+  providerCode: string;
+  modelCode: string;
+  displayName: string;
+  contextWindow: number;
+  maxOutputTokens: number;
+  inputModalities: string[];
+  outputModalities: string[];
+  isDefault: boolean;
+  channelActive: boolean;
 }
 
 export interface ChannelPreset {
@@ -41,6 +84,7 @@ export interface ModelTestResult {
   latencyMs: number;
   message: string;
   models?: string[];
+  modelSpecs?: ModelSpecInfo[];
 }
 
 export interface PluginItem {
@@ -75,8 +119,10 @@ export interface ModelChannelInput {
   baseUrl: string;
   protocol: string;
   enabled: boolean;
-  /** 只进不出：留空表示不修改既有密钥。 */
-  apiKey?: string;
+  /** 只进不出：留空表示不修改既有密钥；显式传 null 表示清除密钥（P11-3 三分语义）。 */
+  apiKey?: string | null;
+  /** P11-1：整表提交该渠道下的模型清单（缺省则只保证默认模型一行存在）。 */
+  models?: ModelItem[];
 }
 
 /* ----------------------------- 模型渠道 ----------------------------- */
@@ -102,6 +148,7 @@ export function activateModelChannel(channelCode: string): Promise<void> {
 
 export function testModelChannel(body: {
   channelCode?: string;
+  modelCode?: string;
   baseUrl?: string;
   apiKey?: string;
   apiKeyRef?: string;
@@ -115,8 +162,13 @@ export function discoverModels(body: {
   baseUrl?: string;
   apiKey?: string;
   protocol?: string;
-}): Promise<string[]> {
-  return apiRequest<string[]>('/api/harness/settings/models/discover', 'POST', body);
+}): Promise<ModelSpecInfo[]> {
+  return apiRequest<ModelSpecInfo[]>('/api/harness/settings/models/discover', 'POST', body);
+}
+
+/** P11-3：扁平模型清单（供选择器按渠道分组）。 */
+export function fetchModelCatalog(): Promise<ModelCatalogItem[]> {
+  return apiRequest<ModelCatalogItem[]>('/api/harness/settings/models/catalog');
 }
 
 export function fetchChannelPresets(): Promise<ChannelPreset[]> {

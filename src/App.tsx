@@ -24,6 +24,7 @@ import SettingsDialog from './components/SettingsDialog';
 import type { Tab } from './components/SettingsDialog';
 import Sidebar from './components/Sidebar';
 import StatusBar from './components/StatusBar';
+import ContextPanel from './components/ContextPanel';
 import ToastContainer from './components/ToastContainer';
 import WorkspaceDialog from './components/WorkspaceDialog';
 import {
@@ -60,8 +61,8 @@ import { expandMentions } from './lib/mentions';
 import { usePluginUiMap } from './lib/plugin-ui';
 import {
   deleteWorkspace,
+  fetchModelCatalog,
   fetchWorkspaces,
-  listModelChannels,
   listPlugins,
   listProfiles,
 } from './lib/settings-client';
@@ -80,6 +81,7 @@ import type {
   ApprovalVerdict,
   BootState,
   ChatMessage,
+  ImageDraft,
   ReasoningEffort,
   RuntimeApprovalDto,
   RuntimeQuestionDto,
@@ -158,6 +160,8 @@ export default function App(): ReactElement {
   const [selectedModel, setSelectedModel] = useState('');
   const [profileDetails, setProfileDetails] = useState<AgentProfile[]>([]);
   const [usage, setUsage] = useState<SessionUsage | null>(null);
+  /** P11-10：上下文成分面板（状态栏「上下文」点开）。 */
+  const [showContext, setShowContext] = useState(false);
   const [focusToken, setFocusToken] = useState(0);
   const [modelFocusToken, setModelFocusToken] = useState(0);
   // P9：工作区 / 会话预设 / 思考强度 / 沙箱权限（会话级）
@@ -242,22 +246,24 @@ export default function App(): ReactElement {
     }
   }, []);
 
+  /**
+   * P11-1/P11-9：模型选项来自 `GET /settings/models/catalog` 的扁平清单。
+   * value 用 `channelCode::modelCode`，因为同一模型码可能挂在多个渠道下。
+   */
   const refreshModel = useCallback(async () => {
     try {
-      const channels = await listModelChannels();
-      const seen = new Set<string>();
-      const options: ComposerModelOption[] = [];
-      for (const channel of channels) {
-        if (!channel.modelCode || seen.has(channel.modelCode)) {
-          continue;
-        }
-        seen.add(channel.modelCode);
-        options.push({
-          value: channel.modelCode,
-          label: channel.modelCode || channel.displayName || channel.channelCode,
-          active: channel.active,
-        });
-      }
+      const catalog = await fetchModelCatalog();
+      const options: ComposerModelOption[] = catalog.map((item) => ({
+        value: item.ref,
+        label: item.modelCode,
+        channelCode: item.channelCode,
+        channelLabel: item.channelDisplayName || item.channelCode,
+        active: item.channelActive,
+        isDefault: item.isDefault,
+        contextWindow: item.contextWindow,
+        maxOutputTokens: item.maxOutputTokens,
+        inputModalities: item.inputModalities,
+      }));
       setModelOptions(options);
     } catch {
       setModelOptions([]);
@@ -532,12 +538,14 @@ export default function App(): ReactElement {
   /* ----------------------------- 发送 / 停止 / 重新生成 ----------------------------- */
 
   const handleSend = useCallback(
-    async (raw: string, options?: { regenerating?: boolean }): Promise<void> => {
+    async (raw: string, options?: { regenerating?: boolean; attachments?: ImageDraft[] }): Promise<void> => {
       const text = raw.trim();
-      if (!text || streaming) {
+      // P11-8：允许「只有图片没有文字」的消息
+      if ((!text && !options?.attachments?.length) || streaming) {
         return;
       }
       const regenerating = options?.regenerating === true;
+      const attachments = options?.attachments ?? [];
 
       // C2：@file 发送展开（SC4：≤5 文件 × 8KB；读不到保留原 token，气泡仍显示原文）
       const expanded = await expandMentions(text, uiMap);
@@ -550,6 +558,7 @@ export default function App(): ReactElement {
         toolCards: [],
         status: 'done',
         createdAt: Date.now(),
+        images: attachments.length > 0 ? attachments : undefined,
       };
       const assistantId = uid();
       const assistantMessage: ChatMessage = {
@@ -620,6 +629,11 @@ export default function App(): ReactElement {
             profile: sessionPresetCode ?? undefined,
             // P9-8：思考强度（空 = 跟随预设/模型默认）
             thinking: sessionThinking ?? undefined,
+            // P11-8：图片附件（后端落附件库，事件里只存引用）
+            attachments:
+              attachments.length > 0
+                ? attachments.map((image) => ({ mediaType: image.mediaType, data: image.data }))
+                : undefined,
           },
           {
             onChunk: ({ content }) => {
@@ -674,6 +688,24 @@ export default function App(): ReactElement {
                   endedAt: Date.now(),
                 });
               });
+            },
+            onUsage: (e) => {
+              // P11-5：每次 LLM 调用后的用量快照。轮次/步数/工具数由 console 端点补，
+              // 这里只覆盖 token/缓存/速度与上下文占用，避免把已经拿到的聚合值冲掉。
+              setUsage((prev) => ({
+                promptTokens: e.promptTokens,
+                completionTokens: e.completionTokens,
+                totalTokens: e.totalTokens,
+                cachedTokens: e.cachedTokens,
+                cacheHitRate: e.cacheHitRate,
+                elapsedMs: e.elapsedMs,
+                tokensPerSecond: e.tokensPerSecond,
+                turns: prev?.turns ?? 0,
+                steps: prev?.steps ?? 0,
+                toolCalls: prev?.toolCalls ?? 0,
+                contextTokens: e.lastPromptTokens,
+                compactions: prev?.compactions ?? 0,
+              }));
             },
             onDone: (e) => {
               patchAssistant((m) => ({
@@ -737,7 +769,8 @@ export default function App(): ReactElement {
       return;
     }
     setMessages((prev) => prev.filter((m) => m.id !== last.id));
-    void handleSend(lastUser.text, { regenerating: true });
+    // P11-8：图片一起重发（附件随消息走，重新生成不该丢图）
+    void handleSend(lastUser.text, { regenerating: true, attachments: lastUser.images });
   }, [streaming, messages, handleSend]);
 
   /* ----------------------------- F4 快捷键 / 快捷入口 ----------------------------- */
@@ -819,6 +852,12 @@ export default function App(): ReactElement {
         return;
       }
       if (e.key === 'Escape') {
+        // P11-10：上下文成分面板是最上层弹层，Esc 先关它
+        if (showContext) {
+          e.preventDefault();
+          setShowContext(false);
+          return;
+        }
         // P10-5：工作区对话框浮在设置之上，Esc 先关它（宿主组件自己不处理 Esc）
         if (workspaceTarget) {
           e.preventDefault();
@@ -839,7 +878,7 @@ export default function App(): ReactElement {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showSettings, workspaceTarget, streaming, handleNewSession, handleStop]);
+  }, [showSettings, showContext, workspaceTarget, streaming, handleNewSession, handleStop]);
 
   /* ----------------------------- 渲染 ----------------------------- */
 
@@ -863,17 +902,23 @@ export default function App(): ReactElement {
     const code = sessionPresetCode || 'default';
     return profileDetails.find((p) => p.profileCode === code)?.contextTokenBudget ?? null;
   }, [profileDetails, sessionPresetCode]);
-  const profileLabel = sessionPresetCode
-    ? profileDetails.find((p) => p.profileCode === sessionPresetCode)?.displayName ?? sessionPresetCode
-    : null;
 
   /* ----------------------------- P10-2：会话头数据 ----------------------------- */
 
   const activeSession = sessions.find((session) => session.sessionId === agentId) ?? null;
   const headerTitle = activeSession?.title?.trim() || (messages.length > 0 ? '未命名会话' : '新会话');
-  const activeWorkspaceCode = selectedWorkspace ?? DEFAULT_WORKSPACE_CODE;
+  /*
+   * P11-13：会话头显示「这个会话实际生效的上下文」。
+   * 优先级：本窗口里刚选的工作区（新建会话前先选）> 活动会话自身绑定的工作区 > 默认工作区。
+   * 少了中间这层，启动时会话头会写「默认工作区」而侧栏高亮的会话其实挂在别的工作区下。
+   */
+  const activeWorkspaceCode = selectedWorkspace ?? activeSession?.workspaceCode ?? DEFAULT_WORKSPACE_CODE;
   const workspaceLabel =
     workspaces.find((workspace) => workspace.workspaceCode === activeWorkspaceCode)?.displayName ?? null;
+  const activePresetCode = sessionPresetCode ?? activeSession?.presetCode ?? null;
+  const headerPresetLabel = activePresetCode
+    ? profileDetails.find((p) => p.profileCode === activePresetCode)?.displayName ?? activePresetCode
+    : null;
   const permissionLabel = PERMISSION_LABEL[permission] ?? null;
   const serviceLabel = bootReady
     ? `服务运行中${agentStatus ? ` · :${agentStatus.port}` : ''}`
@@ -964,7 +1009,7 @@ export default function App(): ReactElement {
             <ChatHeader
               title={headerTitle}
               workspaceLabel={workspaceLabel}
-              presetLabel={profileLabel}
+              presetLabel={headerPresetLabel}
               permissionLabel={permissionLabel}
               streaming={streaming}
               sidebarCollapsed={sidebarCollapsed}
@@ -1005,21 +1050,39 @@ export default function App(): ReactElement {
                 setPermission(mode);
                 void putPermissionMode(agentIdRef.current, mode).catch((err) => toast(describeError(err)));
               }}
-              contextTokens={usage?.contextTokens ?? 0}
-              contextBudget={contextBudget}
               slashItems={slashItems}
               onCommand={handleCommand}
               focusToken={focusToken}
               modelFocusToken={modelFocusToken}
-              onSend={handleSend}
+              onSend={(text, attachments) => {
+                // P11-8：附件走 options（Composer 与 handleSend 的签名不同：前者给附件，后者带 regenerating）
+                if (attachments && attachments.length > 0) {
+                  void handleSend(text, { attachments });
+                } else {
+                  void handleSend(text);
+                }
+              }}
               onStop={handleStop}
             />
-            <StatusBar usage={usage} contextBudget={contextBudget} streaming={streaming} />
+            <StatusBar
+              usage={usage}
+              contextBudget={contextBudget}
+              streaming={streaming}
+              contextDisabled={!agentId}
+              onOpenContext={() => setShowContext(true)}
+            />
           </main>
         </div>
       )}
       <ToastContainer />
       <ConfirmHost />
+      {showContext && agentId ? (
+        <ContextPanel
+          sessionId={agentId}
+          budget={contextBudget}
+          onClose={() => setShowContext(false)}
+        />
+      ) : null}
     </div>
   );
 }
