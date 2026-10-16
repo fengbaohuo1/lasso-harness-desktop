@@ -163,12 +163,21 @@ export function toChatMessages(
   for (const message of consoleMessages) {
     if (message.role === 'USER' || message.role === 'SYSTEM') {
       if (message.role === 'USER') {
+        // P11-14：回放时把图片附件还原成气泡里的缩略图（后端给的是 data URI，content 寻址引用不直接用）
+        const images = (message.attachments ?? [])
+          .filter((item) => item.data)
+          .map((item, index) => ({
+            id: `${idPrefix}-u${out.length}-img${index}`,
+            mediaType: item.mediaType,
+            data: item.data,
+          }));
         out.push({
           id: `${idPrefix}-u${out.length}`,
           role: 'user',
           text: message.text,
           toolCards: [],
           status: 'done',
+          images: images.length > 0 ? images : undefined,
         });
       }
       continue;

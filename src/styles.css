@@ -249,14 +249,16 @@ body {
 
 /* ----------------------------- 消息流 ----------------------------- */
 
+/* P11-14：行距整体收紧——此前 16px 的列间距 + 6px/6px 的行内边距 + 每条消息独立的
+   时间戳行，会让「工具调用」这种单行内容前后各空出一大片，看着像没挨着。 */
 .conversation {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px 16px 12px;
+  padding: 16px 16px 10px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
 }
 
 
@@ -317,42 +319,30 @@ body {
 /* ----------------------------- 工具卡片 ----------------------------- */
 
 
-/* P11-11：工具卡改中性卡片面 + 左侧状态色条 —— 整卡按状态染色太吵，扫读时看不出层级 */
+/* P11-14：工具调用对齐 dsh —— 一行一个调用。
+   此前是「卡片面 + 左侧状态色条 + 圆底图标 + 右侧状态文字」，一屏多次调用时整片都是色块与
+   方框，行高也被撑到 ~38px。现在去掉卡片面与色条，只留一个小图标承载成功/失败色，名字、状态、
+   摘要压在同一行（`名字 失败 · 摘要`），展开才显示参数与结果。 */
 .tool-card {
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-card);
-  border-left: 3px solid var(--border-strong);
-  background: var(--surface-card);
-  padding: 7px 10px;
-  font-size: 12px;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  padding: 0;
+  font-size: 12.5px;
 }
 
 .tool-card + .tool-card {
-  margin-top: 6px;
-}
-
-.tool-card--running {
-  border-left-color: var(--running);
-}
-
-.tool-card--success {
-  border-left-color: var(--success);
-}
-
-.tool-card--error {
-  border-left-color: var(--danger);
+  margin-top: 0;
 }
 
 .tool-card__head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .tool-card__icon {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
+  width: 14px;
+  height: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -361,8 +351,8 @@ body {
 }
 
 .tool-card__icon svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
 }
 
 .tool-card__icon--running {
@@ -379,15 +369,16 @@ body {
 }
 
 .tool-card__name {
-  font-weight: 600;
+  font-weight: 500;
   font-family: var(--mono);
   color: var(--text);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
+/* 状态词紧跟工具名（不再甩到行尾），只有颜色承载语义 */
 .tool-card__status {
-  margin-left: auto;
-  font-size: 11px;
+  font-size: 11.5px;
+  flex: none;
 }
 
 .tool-card__status--running {
@@ -404,6 +395,17 @@ body {
 
 .tool-card__section {
   margin-top: 6px;
+}
+
+/* 展开后的详情区：与工具名对齐缩进，避免详情比标题更靠左 */
+.tool-card__body {
+  padding: 2px 6px 6px 20px;
+}
+
+/* `名字 状态 · 摘要` 里的分隔点 */
+.tool-card__sep {
+  color: var(--text-faint);
+  flex: none;
 }
 
 .tool-card__label {
@@ -1074,7 +1076,7 @@ body {
 
 .message-row {
   display: flex;
-  padding: 6px 0;
+  padding: 1px 0;
 }
 
 .message-row--user {
@@ -1089,11 +1091,11 @@ body {
 .assistant-block {
   width: 100%;
   max-width: 100%;
-  padding: 4px 2px;
+  padding: 1px 2px;
 }
 
 .message-text {
-  margin: 2px 0 6px;
+  margin: 1px 0 3px;
   line-height: 1.7;
 }
 
@@ -1106,24 +1108,25 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-top: 2px;
+  margin-top: 1px;
   font-size: 11px;
   color: var(--text-faint);
 }
 
 
-/* 工具卡折叠态（M8 #1） */
+/* 工具卡折叠态（M8 #1；P11-14：行高收到 3px，单行列表） */
 .tool-card__head--toggle {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
+  gap: 6px;
+  padding: 3px 6px;
   border: none;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
   text-align: left;
 }
@@ -1139,7 +1142,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .tool-card__chevron {
@@ -2401,14 +2404,9 @@ body {
   color: var(--text-dim);
 }
 
-/* 思考折叠块（P9-8；P11-11：与工具卡同族的中性面，行高留白收紧） */
+/* 思考折叠块（P9-8 建立；P11-14：与工具调用同族的紧凑单行，去掉卡片面与色条） */
 .reasoning-block {
-  border: 1px solid var(--border-card);
-  border-left: 3px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface-card);
-  margin-bottom: 6px;
-  overflow: hidden;
+  margin-bottom: 0;
 }
 
 .reasoning-block__summary {
@@ -2416,10 +2414,35 @@ body {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 3px 10px;
-  font-size: 12px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
   color: var(--text-dim);
   cursor: pointer;
+  text-align: left;
+}
+
+.reasoning-block__summary:hover {
+  background: var(--bg-elevated);
+}
+
+.reasoning-block__label {
+  flex: none;
+}
+
+/* 折叠态摘要：思考全文常常几十行，这里只露第一行 */
+.reasoning-block__brief {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 12.5px;
 }
 
 .reasoning-dot {
@@ -2441,8 +2464,8 @@ body {
 }
 
 .reasoning-block__content {
-  margin: 0;
-  padding: 6px 12px 10px;
+  margin: 2px 0 0;
+  padding: 6px 8px 8px 20px;
   font-size: 12px;
   line-height: 1.6;
   color: var(--text-dim);
@@ -3944,6 +3967,17 @@ body {
   overflow: hidden;
 }
 
+/* 缩略图本身是预览入口（P11-14），去掉按钮默认样式 */
+.composer__image-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+}
+
 .composer__image img {
   display: block;
   width: 100%;
@@ -3995,7 +4029,7 @@ body {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* 用户气泡里的图片缩略图（点击看原图） */
+/* 用户气泡里的图片缩略图（P11-14：点击开应用内预览，不再是 target=_blank 的链接） */
 .bubble__images {
   display: flex;
   flex-wrap: wrap;
@@ -4007,9 +4041,16 @@ body {
   display: block;
   width: 96px;
   height: 96px;
+  padding: 0;
   border: 1px solid var(--border-card);
   border-radius: var(--radius-sm);
+  background: transparent;
   overflow: hidden;
+  cursor: zoom-in;
+}
+
+.bubble__image:hover {
+  border-color: var(--accent-border);
 }
 
 .bubble__image img {
@@ -4201,4 +4242,55 @@ body {
   padding: 16px 0;
   text-align: center;
   color: var(--text-faint);
+}
+
+/* ============================ P11-14：图片应用内预览层 ============================ */
+/* 此前消息图片是 `<a target="_blank">`，Tauri 不为它开新窗口，点了等于没反应。
+   预览层挂在 document.body 上（portal），遮罩点击 / Esc 关闭。 */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.lightbox__frame {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.lightbox__img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 140px);
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.lightbox__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px;
+  color: #f2f3f5;
+  font-size: 12px;
+}
+
+.lightbox__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

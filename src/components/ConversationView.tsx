@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import MarkdownLite from '../lib/markdown-lite';
+import { openImage } from '../lib/lightbox';
 import {
   findToolRenderer,
   parseToolResult,
@@ -126,6 +127,9 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
   const renderedSummary = match ? renderTemplate(match.renderer.summary ?? '', ctx) : '';
   const displayName = renderedTitle || card.toolName;
   const summary = renderedSummary || fallbackSummary;
+  // 插件渲染器的 title 模板常常已经把关键参数写进名字（如「写入文件 · xxx.html」），
+  // 摘要再重复一遍只会让单行变长，这里做一次包含判断（P11-14）。
+  const showSummary = summary.length > 0 && !displayName.includes(summary);
   const rendererVisible = match ? visibleBlocks(match.renderer.blocks ?? [], ctx).length > 0 : false;
 
   return (
@@ -148,7 +152,14 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
         <span className={`tool-card__status tool-card__status--${card.status}`}>
           {statusLabel[card.status]}
         </span>
-        {!expanded && summary ? <span className="tool-card__summary">{summary}</span> : null}
+        {!expanded && showSummary ? (
+          <>
+            <span className="tool-card__sep" aria-hidden="true">
+              ·
+            </span>
+            <span className="tool-card__summary">{summary}</span>
+          </>
+        ) : null}
         <span
           className={`tool-card__chevron${expanded ? ' tool-card__chevron--open' : ''}`}
           aria-hidden="true"
@@ -157,7 +168,7 @@ function ToolCard({ card }: { card: ToolCardState }): ReactElement {
         </span>
       </button>
       {expanded ? (
-        <div>
+        <div className="tool-card__body">
           {/* P9-3：todo_write 命中任务卡渲染（快照清单，替代原始 JSON） */}
           {todo ? <TaskCard snapshot={todo} /> : null}
           {!todo && match && rendererVisible ? (
@@ -229,27 +240,42 @@ function MessageBlock({
   message: ChatMessage;
   showRegenerate: boolean;
   onRegenerate?: () => void;
-}): ReactElement {
+}): ReactElement | null {
   const isUser = message.role === 'user';
   const copyText = message.text;
+  // P11-14：空消息不占位。命令式回放里会出现「既无文本也无卡片」的消息，渲染出来只有一行
+  // 时间戳，上下却各留一段行距——在大段空白里看着就像工具调用没跟相邻内容挨着。
+  const hasContent =
+    message.text.trim().length > 0 ||
+    (message.images?.length ?? 0) > 0 ||
+    message.toolCards.length > 0 ||
+    Boolean(message.reasoning && message.reasoning.trim().length > 0);
+  if (
+    !hasContent &&
+    message.status !== 'streaming' &&
+    message.status !== 'error' &&
+    !message.regenerating
+  ) {
+    return null;
+  }
   return (
     <div className={`message-row message-row--${isUser ? 'user' : 'assistant'}`}>
       {isUser ? (
         <div className="bubble bubble--user">
-          {/* P11-8：图片附件缩略图（点击看原图） */}
+          {/* P11-8：图片附件缩略图（点击看原图）；P11-14：改为应用内预览层 */}
           {message.images && message.images.length > 0 ? (
             <div className="bubble__images">
               {message.images.map((image) => (
-                <a
+                <button
                   key={image.id}
+                  type="button"
                   className="bubble__image"
-                  href={image.data}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={image.name ?? '查看原图'}
+                  title={image.name ?? '点击预览'}
+                  aria-label={`预览图片 ${image.name ?? ''}`.trim()}
+                  onClick={() => openImage(image.data, image.name)}
                 >
                   <img src={image.data} alt={image.name ?? '图片附件'} />
-                </a>
+                </button>
               ))}
             </div>
           ) : null}

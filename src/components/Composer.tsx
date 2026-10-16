@@ -30,6 +30,7 @@ import { detectPaletteToken } from '../lib/commands';
 import { fetchMentionGroups } from '../lib/mentions';
 import type { MentionCandidate } from '../lib/mentions';
 import { usePluginUiMap } from '../lib/plugin-ui';
+import { openImage } from '../lib/lightbox';
 import type { ImageDraft, ReasoningEffort, WorkspaceItem } from '../types';
 
 /** 单张图片上限（与后端 FileAttachmentStore.DEFAULT_MAX_BYTES 对齐）。 */
@@ -473,7 +474,16 @@ export default function Composer({
         <div className="composer__images">
           {images.map((image) => (
             <span key={image.id} className="composer__image" title={image.name ?? image.mediaType}>
-              <img src={image.data} alt={image.name ?? '待发图片'} />
+              {/* P11-14：缩略图点击走应用内预览（此前点了没反应） */}
+              <button
+                type="button"
+                className="composer__image-open"
+                title="点击预览"
+                aria-label={`预览图片 ${image.name ?? ''}`.trim()}
+                onClick={() => openImage(image.data, image.name)}
+              >
+                <img src={image.data} alt={image.name ?? '待发图片'} />
+              </button>
               <button
                 type="button"
                 className="composer__image-remove"

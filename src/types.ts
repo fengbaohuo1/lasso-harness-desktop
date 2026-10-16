@@ -424,6 +424,8 @@ export interface ConsoleMessage {
   blocks: ConsoleToolBlock[];
   /** P9-8：助手消息的思考内容（可空）。 */
   reasoning?: string | null;
+  /** P11-14：用户消息的图片附件（后端回放时经附件库还原成 data URI）。 */
+  attachments?: Array<{ mediaType: string; data: string; dataRef?: string }>;
 }
 
 /** GET /api/harness/approvals/runtime/pending 条目（挂起-裁决）。 */

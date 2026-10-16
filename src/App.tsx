@@ -41,6 +41,7 @@ import {
 import { collectSlashItems } from './lib/commands';
 import type { SlashItem } from './lib/commands';
 import { ConfirmHost, confirmAction } from './lib/confirm';
+import { LightboxHost } from './lib/lightbox';
 import {
   answerQuestion,
   compactSession,
@@ -450,6 +451,21 @@ export default function App(): ReactElement {
     },
     [loadSession],
   );
+
+  /**
+   * P11-14：启动后把当前会话的历史读出来。
+   *
+   * 此前 boot 只刷新列表/用量、不读消息——于是出现「侧栏高亮着上次的会话、主区却是欢迎页」，
+   * 必须再点一次该会话才看得到内容。这里只在 boot 就绪那一刻做一次。
+   */
+  const bootSessionLoadedRef = useRef(false);
+  useEffect(() => {
+    if (boot.phase !== 'ready' || bootSessionLoadedRef.current) {
+      return;
+    }
+    bootSessionLoadedRef.current = true;
+    void loadSession(agentIdRef.current);
+  }, [boot.phase, loadSession]);
 
   /** 裸建会话（不弹框）：删除会话后的回落与内部复用。 */
   const startBlankSession = useCallback((presetCode?: string | null) => {
@@ -1076,6 +1092,7 @@ export default function App(): ReactElement {
       )}
       <ToastContainer />
       <ConfirmHost />
+      <LightboxHost />
       {showContext && agentId ? (
         <ContextPanel
           sessionId={agentId}
