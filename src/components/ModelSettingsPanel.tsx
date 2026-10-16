@@ -188,78 +188,99 @@ export default function ModelSettingsPanel(): ReactElement {
         </button>
       </div>
 
-      <table className="settings-table">
-        <thead>
-          <tr>
-            <th>渠道</th>
-            <th>厂商</th>
-            <th>模型</th>
-            <th>协议</th>
-            <th>baseUrl</th>
-            <th>密钥</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {channels.map((channel) => (
-            <tr key={channel.channelCode}>
-              <td>
-                {channel.channelCode}
-                {channel.displayName ? ` · ${channel.displayName}` : ''}
-              </td>
-              <td>{channel.providerCode}</td>
-              <td>{channel.modelCode}</td>
-              <td>{channel.protocol}</td>
-              <td className="settings-table__path">{channel.baseUrl}</td>
-              <td>{channel.hasApiKey ? '已配置' : '未配置'}</td>
-              <td>
-                {channel.active ? (
-                  <span className="status-dot status-dot--ok" title="生效中" />
-                ) : channel.enabled ? (
-                  <span className="status-dot status-dot--on" title="启用（非生效渠道）" />
-                ) : (
-                  <span className="status-dot" title="禁用" />
-                )}
-              </td>
-              <td className="settings-table__actions">
-                {!channel.active ? (
-                  <button type="button" className="btn btn--small" onClick={() => void handleActivate(channel.channelCode)}>
-                    启用
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="btn btn--small"
-                  onClick={() => {
-                    setForm({
-                      channelCode: channel.channelCode,
-                      displayName: channel.displayName,
-                      providerCode: channel.providerCode,
-                      modelCode: channel.modelCode,
-                      baseUrl: channel.baseUrl,
-                      protocol: channel.protocol,
-                      enabled: channel.enabled,
-                      apiKey: '',
-                    });
-                    setTestResult(null);
-                    setDiscovered([]);
-                  }}
-                >
-                  编辑
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--small btn--danger"
-                  onClick={() => void handleDelete(channel.channelCode)}
-                >
-                  删除
-                </button>
-              </td>
+      <div className="settings-table-wrap settings-table-wrap--models">
+        <table className="settings-table">
+          <colgroup>
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '18%' }} />
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '6%' }} />
+            <col style={{ width: '20%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>渠道</th>
+              <th>厂商</th>
+              <th>模型</th>
+              <th>协议</th>
+              <th>baseUrl</th>
+              <th>密钥</th>
+              <th>状态</th>
+              <th>操作</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {channels.map((channel) => (
+              <tr key={channel.channelCode}>
+                <td title={channel.displayName ? `${channel.channelCode} · ${channel.displayName}` : channel.channelCode}>
+                  {channel.channelCode}
+                  {channel.displayName ? ` · ${channel.displayName}` : ''}
+                </td>
+                <td>{channel.providerCode}</td>
+                <td title={channel.modelCode}>{channel.modelCode}</td>
+                <td>{channel.protocol}</td>
+                <td className="settings-table__path" title={channel.baseUrl}>
+                  {channel.baseUrl}
+                </td>
+                <td>{channel.hasApiKey ? '已配置' : '未配置'}</td>
+                <td className="settings-table__center">
+                  {channel.active ? (
+                    <span className="status-dot status-dot--ok" title="生效中" />
+                  ) : channel.enabled ? (
+                    <span className="status-dot status-dot--on" title="启用（非生效渠道）" />
+                  ) : (
+                    <span className="status-dot" title="禁用" />
+                  )}
+                </td>
+                <td className="settings-table__actions">
+                  {!channel.active ? (
+                    <button type="button" className="btn btn--small" onClick={() => void handleActivate(channel.channelCode)}>
+                      启用
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn btn--small"
+                    onClick={() => {
+                      setForm({
+                        channelCode: channel.channelCode,
+                        displayName: channel.displayName,
+                        providerCode: channel.providerCode,
+                        modelCode: channel.modelCode,
+                        baseUrl: channel.baseUrl,
+                        protocol: channel.protocol,
+                        enabled: channel.enabled,
+                        apiKey: '',
+                      });
+                      setTestResult(null);
+                      setDiscovered([]);
+                    }}
+                  >
+                    编辑
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--small btn--danger"
+                    onClick={() => void handleDelete(channel.channelCode)}
+                  >
+                    删除
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {channels.length === 0 ? (
+              <tr>
+                <td className="settings-empty" colSpan={8}>
+                  暂无模型渠道，点击右上角「新增渠道」添加。
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
 
       {form ? (
         <div className="settings-form">

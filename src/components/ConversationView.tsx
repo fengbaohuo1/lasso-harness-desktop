@@ -355,38 +355,34 @@ export default function ConversationView({
               自有 Agent Harness 桌面端：对话驱动，按需调用工具（文件/搜索/命令），
               敏感操作先审批后执行，会话事件全程可回放。
             </p>
-            <div className="welcome-hero__cards">
+            <div className="welcome-hero__actions">
               <button
                 type="button"
-                className="welcome-card"
+                className="welcome-action"
                 onClick={() => onQuickAction?.('chat')}
               >
-                <div className="welcome-card__title">开始对话</div>
-                <div className="welcome-card__hint">聚焦输入框，直接提问或下达任务</div>
+                开始对话
               </button>
               <button
                 type="button"
-                className="welcome-card"
+                className="welcome-action"
                 onClick={() => onQuickAction?.('models')}
               >
-                <div className="welcome-card__title">模型设置</div>
-                <div className="welcome-card__hint">配置厂商渠道、密钥，测试连接并启用</div>
+                模型设置
               </button>
               <button
                 type="button"
-                className="welcome-card"
+                className="welcome-action"
                 onClick={() => onQuickAction?.('plugins')}
               >
-                <div className="welcome-card__title">插件管理</div>
-                <div className="welcome-card__hint">安装/启用/停用插件，编辑插件配置</div>
+                插件管理
               </button>
               <button
                 type="button"
-                className="welcome-card"
+                className="welcome-action"
                 onClick={() => onQuickAction?.('about')}
               >
-                <div className="welcome-card__title">关于</div>
-                <div className="welcome-card__hint">版本、快捷键一览与项目说明</div>
+                关于
               </button>
             </div>
             <p className="welcome-hero__shortcut">

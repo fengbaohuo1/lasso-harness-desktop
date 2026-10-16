@@ -1,5 +1,8 @@
-﻿/* jnf-desktop 涓婚浣撶郴锛堟墜鍐欙紝鏃?UI 搴擄紱璐ㄦ劅瀵归綈 dsh锛歨airline 杈规/鍦嗚浣撶郴/杞槾褰?妯＄硦椤舵爮锛? * F1锛氶鑹蹭护鐗屽弻濂?[data-theme="dark"] / [data-theme="light"]锛孞S 鍚姩鍗冲啓鍏?data-theme
- * 锛堥粯璁よ窡闅忕郴缁?prefers-color-scheme锛宭ocalStorage 閿?jnf-theme 璁板繂涓夋€侊級銆? * 闄ゅ彉閲忓涓嶅厑璁哥‖缂栫爜棰滆壊鈥斺€旀柊澧為鑹插厛鍔犺涔夊彉閲忋€?*/
+/* jnf-desktop 主题体系（手写，无 UI 库；质感对齐 dsh：hairline 边框/圆角体系/软阴影/模糊顶栏）
+ * F1：颜色令牌双牌 [data-theme="dark"] / [data-theme="light"]，JS 启动即写入 data-theme
+ * （默认跟随系统 prefers-color-scheme，localStorage 键 jnf-theme 记忆三态）。
+ * 除变量外不允许硬编码颜色——新增颜色先加语义变量。
+ */
 
 :root {
   --radius-xs: 4px;
@@ -12,7 +15,7 @@
   --composer-actions-width: 52px;
 }
 
-/* 娣辫壊浠ょ墝锛堥粯璁わ級 */
+/* 深色令牌（默认） */
 [data-theme='dark'] {
   color-scheme: dark;
   --bg: #0f1115;
@@ -54,7 +57,7 @@
   --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.2), 0 12px 30px rgba(0, 0, 0, 0.18);
 }
 
-/* 浜壊浠ょ墝锛堝弬鑰?dsh 浜壊璋冿細鐧藉簳/#fbfbfc 渚ф爮/钃濆己璋冿紝钃濇部鐢?#4f8cff 绯伙級 */
+/* 亮色令牌（参考 dsh 亮色调：白底/#fbfbfc 侧栏/蓝强调，蓝沿用 #4f8cff 系） */
 [data-theme='light'] {
   color-scheme: light;
   --bg: #ffffff;
@@ -121,7 +124,7 @@ body {
   line-height: 1.6;
 }
 
-/* ----------------------------- 甯冨眬 ----------------------------- */
+/* ----------------------------- 布局 ----------------------------- */
 
 .app-shell {
   display: flex;
@@ -129,48 +132,7 @@ body {
   height: 100%;
 }
 
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
-  background: var(--bg-header);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
-  flex: none;
-  z-index: 30;
-}
-
-.app-title {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.app-logo {
-  color: var(--accent);
-}
-
-.app-subtitle {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-faint);
-}
-
-.app-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.status-detail {
-  color: var(--text-faint);
-}
+/* P10-2：移除全局 .app-header 顶栏——服务状态下沉到侧栏底，会话上下文上移到 .chat-header */
 
 .status-dot {
   display: inline-block;
@@ -181,7 +143,7 @@ body {
   background: var(--text-faint);
 }
 
-/* P9-6锛氱姸鎬佹敼缁跨偣锛堟枃瀛椾粎 title 鎻愮ず锛夛紱--ok 甯﹀厜鐜己璋冦€岀敓鏁堜腑銆?*/
+/* P9-6：状态改绿点（文字仅 title 提示）；--ok 带光环强调「生效中」 */
 .status-dot--ok {
   background: var(--success);
   box-shadow: 0 0 0 3px var(--success-bg);
@@ -224,111 +186,7 @@ body {
   min-height: 0;
 }
 
-.model-badge {
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: var(--running-bg);
-  color: var(--accent);
-  font-size: 11px;
-  font-family: var(--mono);
-}
-
-/* ----------------------------- 浼氳瘽渚ф爮锛圡7.2锛?----------------------------- */
-
-.sidebar {
-  width: var(--sidebar-width);
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 10px;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--border);
-  overflow-y: auto;
-}
-
-.sidebar__new {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px dashed var(--border-strong);
-  background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.sidebar__new:hover {
-  color: var(--text);
-  border-color: var(--accent);
-}
-
-.sidebar__section {
-  margin: 10px 4px 2px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: var(--text-faint);
-  text-transform: uppercase;
-}
-
-.sidebar__list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.sidebar__item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.sidebar__item:hover {
-  background: var(--bg-elevated);
-  color: var(--text);
-}
-
-.sidebar__item--active {
-  background: var(--running-bg);
-  border-color: var(--accent-border);
-  color: var(--text);
-}
-
-.sidebar__item-title {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar__item-meta {
-  font-size: 11px;
-  color: var(--text-faint);
-}
-
-.sidebar__empty {
-  padding: 10px;
-  font-size: 12px;
-  color: var(--text-faint);
-}
-
-/* ----------------------------- 鍚姩闈㈡澘 ----------------------------- */
+/* ----------------------------- 启动面板 ----------------------------- */
 
 .boot-panel {
   flex: 1;
@@ -361,7 +219,7 @@ body {
   word-break: break-word;
 }
 
-/* ----------------------------- 妯箙锛圥9-6锛氫綆閫忔槑搴?tint 鑽父锛?----------------------------- */
+/* ----------------------------- 横幅（P9-6：低透明度 tint 药丸） ----------------------------- */
 
 .banner {
   display: flex;
@@ -383,7 +241,7 @@ body {
 }
 
 
-/* ----------------------------- 娑堟伅娴?----------------------------- */
+/* ----------------------------- 消息流 ----------------------------- */
 
 .conversation {
   flex: 1;
@@ -427,7 +285,7 @@ body {
   font-size: 12px;
 }
 
-/* 娴佸紡鈥滄鍦ㄨ緭鍏モ€濇寚绀?*/
+/* 流式“正在输入”指示 */
 .typing {
   display: inline-flex;
   gap: 4px;
@@ -450,7 +308,7 @@ body {
   animation-delay: 0.4s;
 }
 
-/* ----------------------------- 宸ュ叿鍗＄墖 ----------------------------- */
+/* ----------------------------- 工具卡片 ----------------------------- */
 
 
 .tool-card {
@@ -564,7 +422,7 @@ body {
   word-break: break-word;
 }
 
-/* ----------------------------- 杈撳叆鍖?----------------------------- */
+/* ----------------------------- 输入区 ----------------------------- */
 
 .composer {
   flex: none;
@@ -657,7 +515,7 @@ body {
   color: var(--text);
 }
 
-/* ----------------------------- 璁剧疆锛圡6/P4锛?----------------------------- */
+/* ----------------------------- 设置（M6/P4） ----------------------------- */
 
 .banner--info {
   background: var(--info-bg);
@@ -700,9 +558,11 @@ body {
   z-index: 50;
 }
 
+/* P10-3：固定高度——对话框不得随页签内容变长变短 */
 .settings-dialog {
-  width: min(1040px, 94vw);
-  max-height: 86vh;
+  /* 1160px：8 列渠道表（--table-min: 880px）在 1280px 窗口下刚好不出现横向滚动条 */
+  width: min(1160px, 95vw);
+  height: min(780px, 88vh);
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);
@@ -725,7 +585,7 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-/* P9-5锛氱旱鍚戝竷灞€鈥斺€斿乏瀵艰埅 + 鍙冲唴瀹?*/
+/* P9-5：纵向布局——左导航 + 右内容 */
 .settings-dialog__body {
   display: flex;
   flex: 1;
@@ -781,44 +641,73 @@ body {
   font-size: 12px;
 }
 
+/* P10-4：表格整治——固定布局 + 横向滚动兜底，内容绝不撑破列 */
+.settings-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+}
+
+/* 各表的最小宽度（低于此值出现横向滚动，而不是挤扁列） */
+/* 各表最小宽度：不得超过「对话框 1160 - 导航 184 - 两侧内边距 60」≈ 916px，
+   否则最右侧的「操作」列会被推到滚动区外（fixed 布局下靠 ellipsis 收缩，不需要靠 min-width 保可读性）。 */
+.settings-table-wrap--models { --table-min: 880px; }
+.settings-table-wrap--profiles { --table-min: 840px; }
+.settings-table-wrap--tools { --table-min: 800px; }
+.settings-table-wrap--plugins { --table-min: 900px; }
+.settings-table-wrap--catalog { --table-min: 780px; }
+.settings-table-wrap--workspaces { --table-min: 720px; }
+.settings-table-wrap--kv { --table-min: 460px; }
+
 .settings-table {
   width: 100%;
+  min-width: var(--table-min, 680px);
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 13px;
 }
 
 .settings-table th,
 .settings-table td {
-  padding: 6px 8px;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: middle;
 }
 
-/* P9-6锛氬崟鍏冩牸涓嶆崲琛屻€佹孩鍑虹渷鐣ワ紱鎿嶄綔鍒椾繚鎸佸浐鏈夊搴︼紙浠讳綍瀹藉害涓嬩笉寰楀爢鍙犳崲琛岋級 */
+.settings-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.settings-table tbody tr:hover td {
+  background: var(--bg-elevated);
+}
+
+/* P9-6 / P10-4：单元格不换行、溢出省略；操作列保持固有宽度（任何宽度下不得堆叠换行） */
 .settings-table th {
   color: var(--text-faint);
   font-weight: 500;
   white-space: nowrap;
+  background: var(--bg-elevated);
 }
 
 .settings-table td {
-  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* P10-4：描述类列也走单行省略（两行 clamp 会让行高参差、表格显得更乱），
+ * 全文通过单元格 title 悬浮查看。 */
 .settings-table__desc {
-  max-width: 320px;
-  white-space: normal;
+  color: var(--text-dim);
 }
 
 .settings-table__actions {
   display: flex;
   flex-wrap: nowrap;
   gap: 4px;
-  max-width: none;
   white-space: nowrap;
 }
 
@@ -827,20 +716,38 @@ body {
   font-size: 11.5px;
 }
 
-/* 鎻忚堪鍒椾袱琛屾埅鏂紙clamp 闇€瑕?-webkit-box锛屾晠缃簬鍐呭眰 span 涓婏級 */
-.clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  word-break: break-word;
-}
-
 .settings-table__path {
-  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.settings-table td.settings-table__path,
+.settings-table td.settings-table__mono {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.settings-table__muted {
+  color: var(--text-faint);
+}
+
+.settings-table__center {
+  text-align: center;
+}
+
+.settings-empty {
+  padding: 24px 12px;
+  color: var(--text-faint);
+  text-align: center;
+  white-space: normal;
+}
+
+/* P10-4：fixed 布局下复选框不应被 width:100% 撑满整列 */
+.settings-table input[type='checkbox'] {
+  width: auto;
+  padding: 0;
 }
 
 .settings-table input {
@@ -898,7 +805,7 @@ body {
   margin-top: 10px;
 }
 
-/* ----------------------------- M7锛氬璇濇覆鏌?/ 瀹℃壒鍗?/ 婊氬姩 ----------------------------- */
+/* ----------------------------- M7：对话渲染 / 审批卡 / 滚动 ----------------------------- */
 
 .conversation-wrap {
   position: relative;
@@ -908,7 +815,7 @@ body {
   min-height: 0;
 }
 
-/* 鐢熸垚涓殑椤堕儴缁嗚繘搴︽潯锛堟祦鍔ㄥ井鍏夛級 */
+/* 生成中的顶部细进度条（流动微光） */
 .streaming-bar {
   height: 2px;
   flex: none;
@@ -1076,7 +983,7 @@ body {
   white-space: pre;
 }
 
-/* 瀹℃壒鍗★紙鎸傝捣-瑁佸喅锛?*/
+/* 审批卡（挂起-裁决） */
 
 .approval-stack {
   display: flex;
@@ -1130,7 +1037,7 @@ body {
   gap: 8px;
 }
 
-/* 鍥炲埌搴曢儴 */
+/* 回到底部 */
 
 .scroll-bottom {
   position: absolute;
@@ -1158,7 +1065,7 @@ body {
   vertical-align: -2px;
 }
 
-/* ----------------------------- M8锛氭鏂囨帓鐗?/ 鎶樺彔宸ュ叿鍗?/ 闂鍗?/ 琛ㄦ牸 ----------------------------- */
+/* ----------------------------- M8：正文排版 / 折叠工具卡 / 问题卡 / 表格 ----------------------------- */
 
 .message-row {
   display: flex;
@@ -1173,7 +1080,7 @@ body {
   justify-content: flex-start;
 }
 
-/* 鍔╂墜姝ｆ枃锛氬叏瀹芥棤姘旀场锛圡8 #2锛夛紝鐢ㄦ埛娑堟伅淇濈暀鍙充晶姘旀场 */
+/* 助手正文：全宽无气泡（M8 #2），用户消息保留右侧气泡 */
 .assistant-block {
   width: 100%;
   max-width: 100%;
@@ -1200,7 +1107,7 @@ body {
 }
 
 
-/* 宸ュ叿鍗℃姌鍙犳€侊紙M8 #1锛?*/
+/* 工具卡折叠态（M8 #1） */
 .tool-card__head--toggle {
   width: 100%;
   display: flex;
@@ -1247,7 +1154,7 @@ body {
 }
 
 
-/* 闂鍗★紙M8 #4锛?*/
+/* 问题卡（M8 #4） */
 .question-card {
   border: 1px solid var(--accent-border);
   border-radius: var(--radius);
@@ -1310,7 +1217,7 @@ body {
   font-size: 13px;
 }
 
-/* markdown 琛ㄦ牸锛圡8 #3锛?*/
+/* markdown 表格（M8 #3） */
 .md-table-wrap {
   margin: 8px 0;
   overflow-x: auto;
@@ -1334,7 +1241,7 @@ body {
   font-weight: 600;
 }
 
-/* ----------------------------- 鍔ㄧ敾 ----------------------------- */
+/* ----------------------------- 动画 ----------------------------- */
 
 @keyframes spin {
   to {
@@ -1363,7 +1270,7 @@ body {
   }
 }
 
-/* 婊氬姩鏉?*/
+/* 滚动条 */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -1378,7 +1285,7 @@ body {
   background: var(--text-dim);
 }
 
-/* ----------------------------- F1锛氫富棰樺垏鎹?/ 閫氱敤鍥炬爣鎸夐挳 ----------------------------- */
+/* ----------------------------- F1：主题切换 / 通用图标按钮 ----------------------------- */
 
 .icon-btn {
   display: inline-flex;
@@ -1418,7 +1325,7 @@ body {
   font-size: 11px;
 }
 
-/* ----------------------------- F3锛氫晶鏍忔悳绱?琛屾搷浣?鍒嗙粍/鎶樺彔 ----------------------------- */
+/* ----------------------------- F3：侧栏搜索 / 行操作 / 分组 / 折叠 ----------------------------- */
 
 .sidebar__search {
   width: 100%;
@@ -1436,181 +1343,11 @@ body {
   border-color: var(--accent);
 }
 
-.sidebar__group {
-  margin: 12px 4px 4px;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--text-faint);
-  text-transform: uppercase;
-}
-
-.sidebar__row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  border-radius: var(--radius-sm);
-}
-
-.sidebar__row:hover {
-  background: var(--bg-elevated);
-}
-
-.sidebar__row--active {
-  background: var(--running-bg);
-  border: 1px solid var(--accent-border);
-}
-
-.sidebar__row .sidebar__item {
-  flex: 1;
-  min-width: 0;
-}
-
-.sidebar__row .sidebar__item:hover {
-  background: transparent;
-  color: var(--text);
-}
-
-.sidebar__actions {
-  display: none;
-  gap: 2px;
-  padding-right: 4px;
-  flex: none;
-}
-
-.sidebar__row:hover .sidebar__actions {
-  display: flex;
-}
-
-.sidebar__action {
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-faint);
-  cursor: pointer;
-  padding: 0;
-}
-
-.sidebar__action:hover {
-  color: var(--text);
-  background: var(--bg-panel);
-}
-
-.sidebar__action--danger:hover {
-  color: var(--danger);
-}
-
-.sidebar__action svg {
-  width: 13px;
-  height: 13px;
-}
-
-.sidebar__rename {
-  width: 100%;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--accent);
-  background: var(--bg-input);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  outline: none;
-}
-
-.sidebar__confirm {
-  position: absolute;
-  right: 4px;
-  top: calc(100% + 4px);
-  z-index: 40;
-  width: 190px;
-  padding: 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--danger-border);
-  background: var(--bg-panel);
-  box-shadow: var(--shadow);
-  font-size: 12px;
-  color: var(--text);
-}
-
-.sidebar__confirm-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-  justify-content: flex-end;
-}
-
-.sidebar__item-title--plain {
-  font-family: inherit;
-}
-
-
-.sidebar__foot {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: auto;
-  padding: 8px 6px 2px;
-  font-size: 11px;
-  color: var(--text-faint);
-}
-
-.sidebar__foot svg {
-  width: 13px;
-  height: 13px;
-}
-
-/* 鎶樺彔鎬侊細绾?64px 鍥炬爣鍒?*/
-.sidebar--collapsed {
-  width: var(--sidebar-collapsed-width);
-  padding: 12px 8px;
-  align-items: center;
-}
-
-.sidebar--collapsed .sidebar__search,
-.sidebar--collapsed .sidebar__section,
-.sidebar--collapsed .sidebar__group {
-  display: none;
-}
-
-.sidebar--collapsed .sidebar__list {
-  width: 100%;
-  align-items: center;
-}
-
-.sidebar--collapsed .sidebar__row {
-  width: 40px;
-  height: 40px;
-  justify-content: center;
-}
-
-.sidebar--collapsed .sidebar__row .sidebar__item {
-  padding: 0;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.sidebar--collapsed .sidebar__item-title {
-  max-width: 32px;
-  text-align: center;
-}
-
-.sidebar--collapsed .sidebar__item-meta,
-.sidebar--collapsed .sidebar__actions {
-  display: none;
-}
-
-/* ----------------------------- F4锛氭杩庨〉 / toast / 閲嶆柊鐢熸垚 / About ----------------------------- */
+/* ----------------------------- F4：欢迎页 / toast / 重新生成 / About ----------------------------- */
 
 .welcome-hero {
   margin: auto;
-  max-width: 560px;
+  max-width: 520px;
   text-align: center;
   padding: 24px 16px;
 }
@@ -1619,65 +1356,54 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-lg);
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius);
   background: var(--accent-soft);
   border: 1px solid var(--accent-border);
   color: var(--accent);
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
 
 .welcome-hero__title {
-  margin: 10px 0 4px;
-  font-size: 21px;
+  margin: 12px 0 5px;
+  font-size: 19px;
   font-weight: 650;
   color: var(--text);
 }
 
 .welcome-hero__desc {
-  margin: 0 0 18px;
-  font-size: 13px;
+  margin: 0 0 16px;
+  font-size: 12.5px;
+  line-height: 1.65;
   color: var(--text-dim);
 }
 
-.welcome-hero__cards {
+/* P10-7：欢迎页从「四大卡」收敛为一行胶囊入口——少即是多，首屏只有标题、一句话与四个入口 */
+.welcome-hero__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   justify-content: center;
 }
 
-.welcome-card {
-  flex: 1 1 200px;
-  min-width: 200px;
-  padding: 12px;
-  border-radius: var(--radius);
+.welcome-action {
+  padding: 6px 15px;
+  border-radius: 999px;
   border: 1px solid var(--border-strong);
   background: var(--bg-panel);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.welcome-card:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.welcome-card__title {
-  font-weight: 600;
-  margin-bottom: 3px;
-}
-
-.welcome-card__hint {
-  font-size: 12px;
   color: var(--text-dim);
-  line-height: 1.5;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.welcome-action:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .welcome-hero__shortcut {
@@ -1686,7 +1412,7 @@ body {
   color: var(--text-faint);
 }
 
-/* toast锛堝彸涓嬭锛屾垚鍔?澶辫触锛?s 鑷姩娑堝け锛?*/
+/* toast（右下角，成功/失败 3s 自动消失） */
 .toast-wrap {
   position: fixed;
   right: 18px;
@@ -1738,7 +1464,7 @@ body {
   color: var(--text);
 }
 
-/* 閲嶆柊鐢熸垚绛夋秷鎭搷浣?*/
+/* 重新生成等消息操作 */
 .message-meta__action {
   margin-left: 8px;
   padding: 1px 8px;
@@ -1771,12 +1497,7 @@ body {
   animation: spin 1.2s linear infinite;
 }
 
-.sidebar__new svg {
-  width: 15px;
-  height: 15px;
-}
-
-/* About 椤?*/
+/* About 页 */
 .about {
   max-width: 560px;
   font-size: 13px;
@@ -1831,7 +1552,7 @@ body {
   width: 150px;
 }
 
-/* ----------------------------- F2锛欳omposer 宸ュ叿鏉?----------------------------- */
+/* ----------------------------- F2：Composer 工具条 ----------------------------- */
 
 .composer__toolbar {
   display: flex;
@@ -1884,7 +1605,7 @@ body {
   background: var(--accent);
 }
 
-/* ----------------------------- F5锛氬紩鐢ㄥ潡 / 鍒嗗壊绾?/ 鍥剧墖 ----------------------------- */
+/* ----------------------------- F5：引用块 / 分割线 / 图片 ----------------------------- */
 
 .md-quote {
   margin: 8px 0;
@@ -1918,9 +1639,9 @@ body {
   list-style: decimal;
 }
 
-/* ----------------------------- 绗簲闃舵锛氭彃浠?UI 璐＄尞 ----------------------------- */
+/* ----------------------------- 第五阶段：插件 UI 贡献 ----------------------------- */
 
-/* 宸ュ叿鍗℃覆鏌撳潡锛圲2锛?*/
+/* 工具卡渲染块（U2） */
 .tool-blocks {
   display: flex;
   flex-direction: column;
@@ -1985,7 +1706,7 @@ body {
   gap: 8px;
 }
 
-/* 鎻掍欢鐙珛閰嶇疆椤碉紙U3锛?*/
+/* 插件独立配置页（U3） */
 .plugin-config-page {
   display: flex;
   flex-direction: column;
@@ -2122,7 +1843,7 @@ body {
   gap: 8px;
 }
 
-/* 鎻掍欢闈㈡澘宸ュ叿鏉′笌 UI 寰芥爣 */
+/* 插件面板工具条与 UI 徽标 */
 .settings-panel__toolbar {
   display: flex;
   align-items: center;
@@ -2138,9 +1859,9 @@ body {
   margin-left: 6px;
 }
 
-/* ============================= 绗竷闃舵锛欳1/C2 娴眰 路 C3 鐘舵€佹爮 路 C4 绮句慨 ============================= */
+/* ============================= 第七阶段：C1/C2 浮层 · C3 状态栏 · C4 精修 ============================= */
 
-/* C4锛氬叏灞€鐒︾偣鐜紙閿洏鍙揪鎬х粺涓€锛涙寚閽堢偣鍑讳笉鍑虹幆锛?*/
+/* C4：全局焦点环（键盘可达性统一；指针点击不出环） */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -2163,7 +1884,7 @@ body {
   opacity: 1;
 }
 
-/* C1/C2锛氳緭鍏ユ诞灞傦紙/ 鍛戒护闈㈡澘 路 @ 鎻愬強鍊欓€夛級 */
+/* C1/C2：输入浮层（/ 命令面板 · @ 提及候选） */
 .composer__row {
   position: relative;
 }
@@ -2270,7 +1991,7 @@ body {
   font-size: 11px;
 }
 
-/* C3锛氬簳閮ㄧ姸鎬佹爮 */
+/* C3：底部状态栏 */
 .status-bar {
   flex: none;
   display: flex;
@@ -2349,7 +2070,7 @@ body {
   background: var(--danger);
 }
 
-/* toast锛歩nfo 妗ｏ紙/help 绫诲府鍔╂枃妗堬級+ 澶氳鏂囨淇濇崲琛?*/
+/* toast：info 档（/help 类帮助文案）+ 多行文案保换行 */
 .toast span {
   white-space: pre-line;
 }
@@ -2360,15 +2081,14 @@ body {
   color: var(--info-text);
 }
 
-/* C4锛氫氦浜掕繃娓＄粺涓€锛堟寜閽?鍥炬爣鎸夐挳/chip锛?*/
+/* C4：交互过渡统一（按钮 / 图标按钮 / chip） */
 .btn,
 .icon-btn,
 .composer__model,
 .composer__profile,
 .palette__item,
 .message-meta__action,
-.welcome-card,
-.sidebar__item,
+.welcome-action,
 .question-card__option,
 .settings-tab {
   transition:
@@ -2382,9 +2102,9 @@ body {
   border-color: var(--accent-border);
 }
 
-/* ============================= 绗叓闃舵锛氬懡浠ょ籂鍋?路 璐＄尞闈?路 宸ュ叿娉ㄥ唽 ============================= */
+/* ============================= 第八阶段：命令纠偏 · 贡献面 · 工具注册 ============================= */
 
-/* P8-2锛氭彃浠惰础鐚鎯咃紙宸ュ叿/绔偣/鍛戒护/鎻愬強婧?chip 缁勶級 */
+/* P8-2：插件贡献详情（工具/端点/命令/提及源 chip 组） */
 .plugin-contrib {
   display: flex;
   flex-direction: column;
@@ -2431,11 +2151,11 @@ body {
   color: var(--warning);
 }
 
-/* ============================= 绗節闃舵锛氳缃旱鍚戝竷灞€ 路 宸ヤ綔鍖?路 鐘舵€佺豢鐐?路 琛ㄥ崟绮句慨 ============================= */
+/* ============================= 第九阶段：设置纵向布局 · 工作区 · 状态绿点 · 表单精修 ============================= */
 
-/* P9-5锛氳缃鑸紙鍒嗙粍鍥炬爣 + 鏂囧瓧锛沘ctive 宸︿晶 3px inset 鏉?+ tint 搴曪級 */
+/* P9-5：设置导航（分组图标 + 文字；active 左侧 3px inset 条 + tint 底） */
 .settings-nav {
-  width: 200px;
+  width: 184px;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -2527,13 +2247,15 @@ body {
   white-space: nowrap;
 }
 
-/* P9-5锛氬唴瀹瑰尯锛堝皬鑺傛爣棰?+ 鐧藉崱瀹瑰櫒锛?*/
+/* P9-5：内容区（小节标题 + 白卡容器）
+ * P10-3：滚动职责下移到 .set-card —— 对话框定高后，标题固定、卡片内部滚动，
+ * 页面不再随内容长短把对话框撑高拉矮。 */
 .settings-content {
   flex: 1;
   min-width: 0;
-  padding: 14px 18px 20px;
+  padding: 14px 16px 16px;
   background: var(--bg);
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .settings-page__title {
@@ -2543,14 +2265,14 @@ body {
 }
 
 .set-card {
-  padding: 14px 16px;
+  padding: 12px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--bg-panel);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-/* P9-6锛氳〃鏍煎鍗曞厓鏍硷紙鎻掍欢璐＄尞灞曞紑琛岋級涓?chip 缁勬崲琛屽厹搴?*/
+/* P9-6：表格宽单元格（插件贡献展开行）与 chip 组换行兜底*/
 .settings-table__wide {
   max-width: none;
   white-space: normal;
@@ -2569,9 +2291,9 @@ body {
   border-radius: 99px;
 }
 
-/* ============================ 绗節闃舵浜屾闃燂細composer / 浠诲姟 / 鎬濊€?/ 鏂颁細璇?============================ */
+/* ============================ 第九阶段二梯队：composer / 任务 / 思考 / 新会话============================ */
 
-/* prompt-shell锛?4px 鍦嗚杈撳叆鍗★紙瀵归綈 dsh锛?*/
+/* prompt-shell：24px 圆角输入卡（对齐 dsh） */
 .composer--shell {
   border: 1px solid var(--border);
   border-radius: 24px;
@@ -2603,7 +2325,7 @@ body {
   min-width: 0;
 }
 
-/* 鑳跺泭 chip锛堝伐浣滃尯/鏉冮檺/妯″瀷/鎬濊€冿級 */
+/* 胶囊 chip（工作区/权限/模型/思考） */
 .composer-chip {
   display: inline-flex;
   align-items: center;
@@ -2656,7 +2378,7 @@ body {
   border-color: var(--danger-border, var(--border-strong));
 }
 
-/* 涓婁笅鏂囧渾鐜?*/
+/* 上下文圆环 */
 .context-ring {
   position: relative;
   display: inline-flex;
@@ -2674,7 +2396,7 @@ body {
   color: var(--text-dim);
 }
 
-/* 鎬濊€冩姌鍙犲潡锛圥9-8锛?*/
+/* 思考折叠块（P9-8） */
 .reasoning-block {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -2724,7 +2446,7 @@ body {
   overflow-y: auto;
 }
 
-/* 浠诲姟鐘舵€侊紙P9-3锛?*/
+/* 任务状态（P9-3） */
 .task-status-bar {
   display: flex;
   align-items: center;
@@ -2856,7 +2578,7 @@ body {
   animation: reasoning-pulse 1.2s ease-in-out infinite;
 }
 
-/* 鏂颁細璇濆璇濇锛圥9-7锛?*/
+/* 新会话对话框（P9-7） */
 .new-session-dialog {
   width: min(560px, 92vw);
 }
@@ -2956,4 +2678,902 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ============================ 第十阶段：主页面重构与展示整治（P10-1 ~ P10-7） ============================
+ * 目标对齐 dsh 主页面：左栏「品牌 → 新会话 → 插件 → 工作区树（组内嵌会话）」，
+ * 主区「会话头（标题 + 上下文胶囊）→ 对话 → 输入 → 状态栏」，设置对话框定高、表格固定布局不超列。
+ */
+
+/* ----------------------------- P10-1：侧栏（工作区树） ----------------------------- */
+
+.sidebar {
+  width: var(--sidebar-width);
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px 8px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 4px 10px 6px;
+  flex: none;
+}
+
+.sidebar__logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+
+.sidebar__logo-mark {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.sidebar__logo-tag {
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.sidebar__cta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  width: 100%;
+  padding: 9px 12px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sidebar__cta:hover {
+  background: var(--running-bg);
+}
+
+.sidebar__cta svg {
+  width: 15px;
+  height: 15px;
+}
+
+.sidebar__entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar__entry:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.sidebar__entry svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.sidebar__entry-count {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.sidebar__secthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex: none;
+  margin: 12px 0 4px;
+  padding: 0 4px 0 8px;
+}
+
+.sidebar__secthead-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.sidebar__sectacts {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.sidebar__sectacts .icon-btn {
+  width: 24px;
+  height: 24px;
+}
+
+.sidebar__search {
+  width: 100%;
+  flex: none;
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.sidebar__search:focus {
+  border-color: var(--accent);
+}
+
+.sidebar__tree {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.wsgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.wsgroup__head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 2px 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.wsgroup__head:hover {
+  background: var(--bg-elevated);
+}
+
+.wsgroup__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 5px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wsgroup__chev {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-faint);
+  transition: transform 0.15s ease;
+}
+
+.wsgroup__chev svg {
+  width: 12px;
+  height: 12px;
+}
+
+.wsgroup__chev--open {
+  transform: rotate(90deg);
+}
+
+.wsgroup__name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wsgroup__count {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.wsgroup__acts {
+  display: none;
+  align-items: center;
+  gap: 0;
+  flex: none;
+  padding-right: 2px;
+}
+
+.wsgroup__head:hover .wsgroup__acts {
+  display: flex;
+}
+
+.wsgroup__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-left: 9px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
+
+.wsgroup__empty {
+  margin: 4px 8px 6px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.session {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.session:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.session--active {
+  background: var(--running-bg);
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.session--active:hover {
+  background: var(--running-bg);
+}
+
+.session__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session__time {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.session:hover .session__time {
+  visibility: hidden;
+}
+
+.session__acts {
+  display: none;
+  align-items: center;
+  gap: 0;
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: inherit;
+}
+
+.session:hover .session__acts {
+  display: flex;
+}
+
+.session--editing {
+  padding: 2px;
+}
+
+.session__rename {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.sidebar__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: none;
+  margin-top: auto;
+  padding: 6px 2px 0;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar__footrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar__footrow:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.sidebar__footrow svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.sidebar__footrow-value {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.sidebar__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.sidebar__status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 折叠态：图标列（品牌 / 展开 / 新会话 / 插件 / 各工作区 / 主题 / 设置 / 状态点） */
+.sidebar--collapsed {
+  width: var(--sidebar-collapsed-width);
+  padding: 10px 0;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.sidebar__brand--rail {
+  justify-content: center;
+  width: 100%;
+  padding: 2px 0 8px;
+}
+
+.sidebar__rail {
+  width: 24px;
+  height: 1px;
+  margin: 6px 0;
+  background: var(--border);
+}
+
+.sidebar__spacer {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ----------------------------- 图标按钮尺寸档 ----------------------------- */
+
+.icon-btn--sm {
+  width: 22px;
+  height: 22px;
+}
+
+.icon-btn--sm svg {
+  width: 13px;
+  height: 13px;
+}
+
+.icon-btn--lg {
+  width: 36px;
+  height: 36px;
+}
+
+.icon-btn--active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ----------------------------- P10-2：主区会话头 ----------------------------- */
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 9px 18px;
+  background: var(--bg-header);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  z-index: 20;
+}
+
+.chat-header__main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-header__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-header__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chat-header__live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  font-size: 11.5px;
+  color: var(--accent);
+}
+
+.chat-header__live::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.chat-header__acts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.chat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 180px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.chat-chip svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.chat-chip__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ----------------------------- P10-3：设置对话框定高 + 内容滚动 ----------------------------- */
+
+.settings-dialog__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-dialog__title svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-faint);
+}
+
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 标题与卡片之间用 .settings-page 的 gap 控距，去掉 P9 的 10px 下外边距（避免叠加成 20px）*/
+.settings-page .settings-page__title {
+  margin: 0;
+  flex: none;
+}
+
+.set-card {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* P10-4：面板工具条统一成一行两端布局；下外边距交给 .settings-panel 的 gap，避免叠加成 20px */
+.settings-panel .settings-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+/* ----------------------------- P10-4：插件贡献表 / 工具卡表格不超列 ----------------------------- */
+
+.tool-block__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.tool-block__table {
+  width: 100%;
+  min-width: 360px;
+  border-collapse: collapse;
+}
+
+.tool-block__table th,
+.tool-block__table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-block__table th {
+  color: var(--text-faint);
+  font-weight: 500;
+  background: var(--bg-elevated);
+}
+
+.tool-block__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ----------------------------- P10-5：工作区对话框（含目录浏览） ----------------------------- */
+
+.ws-dialog {
+  width: min(620px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.ws-dialog__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ws-dialog__head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ws-dialog__icon {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.ws-dialog__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.ws-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.ws-dialog__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.ws-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ws-field__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.ws-field__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-field__row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-field__hint {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.ws-field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.ws-field input:focus {
+  border-color: var(--accent);
+}
+
+.ws-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+
+.ws-browser__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-browser__path {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-input);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-browser__roots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip--ghost {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.chip--ghost:hover {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.ws-browser__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.ws-browser__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-browser__item:hover {
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+.ws-browser__item-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-faint);
+}
+
+.ws-browser__item-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ws-browser__item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-browser__empty {
+  margin: 8px 4px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* ----------------------------- P10-7：启动面板补齐 / 状态栏微调 ----------------------------- */
+
+.boot-panel__logo {
+  font-size: 30px;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.boot-panel h2 {
+  margin: 10px 0 4px;
+  font-size: 16px;
+}
+
+.status-bar {
+  flex: none;
+}
+/* P10-7：底栏分组呈现（组内用 · 连接，组间用竖线分隔，右侧百分比对齐）*/.status-bar__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+}
+
+.status-bar__sep {
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+
+.status-bar__divider {
+  flex: none;
+  width: 1px;
+  height: 11px;
+  background: var(--border-strong);
+}
+
+.status-bar__pct {
+  color: var(--text);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+/* P10-8：应用内确认框（取代 window.confirm —— 原生弹窗标题会暴露 localhost:1420 这类内部地址） */
+.confirm-dialog {
+  width: min(400px, 92vw);
+  padding: 18px 20px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow);
+}
+
+.confirm-dialog__head {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.confirm-dialog__body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.confirm-dialog__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
 }

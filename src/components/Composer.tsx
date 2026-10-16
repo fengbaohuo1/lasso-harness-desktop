@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react';
 import InputPalette from './InputPalette';
 import type { PaletteEntry } from './InputPalette';
-import { BrainIcon, ChevronIcon, SendIcon, ShieldIcon, StopIcon, WorkspaceIcon } from './icons';
+import { BrainIcon, ChevronIcon, MentionIcon, SendIcon, ShieldIcon, StopIcon, WorkspaceIcon } from './icons';
 import { fillTemplate, filterSlashItems } from '../lib/commands';
 import type { PaletteState, SlashItem } from '../lib/commands';
 import { detectPaletteToken } from '../lib/commands';
@@ -415,8 +415,23 @@ export default function Composer({
         onBlur={() => setPalette(null)}
       />
       <div className="composer__toolbar">
-        {/* 左栏：工作区 + 权限 */}
+        {/* 左栏：@ 引用 + 工作区 + 权限 */}
         <div className="composer__toolbar-left">
+          <button
+            type="button"
+            className="icon-btn composer__at"
+            title="引用文件（@）"
+            aria-label="引用文件"
+            disabled={disabled}
+            onClick={() => {
+              const next = draft === '' || /\s$/.test(draft) ? `${draft}@` : `${draft} @`;
+              setDraft(next);
+              syncPalette(next, next.length);
+              textareaRef.current?.focus();
+            }}
+          >
+            <MentionIcon />
+          </button>
           <label className="composer-chip composer-chip--workspace" title="会话工作区（工具按此目录解析路径）">
             <WorkspaceIcon />
             <select

@@ -183,3 +183,40 @@ export function BrainIcon(): ReactElement {
     </>,
   );
 }
+
+/* ----------------------------- 第十阶段：侧栏工作区段头 / 会话头 ----------------------------- */
+
+/** 新会话（对话气泡 + 加号）。 */
+export function NewChatIcon(): ReactElement {
+  return svg(
+    <>
+      <path d="M13.6 7.8c0 2.5-2.5 4.5-5.6 4.5-.7 0-1.4-.1-2-.3L2.4 13.2l1-3C2.7 9.5 2.2 8.7 2.2 7.8c0-2.5 2.5-4.5 5.8-4.5s5.6 2 5.6 4.5z" />
+      <path d="M8 6.2v3.2M6.4 7.8h3.2" />
+    </>,
+  );
+}
+
+/** 排序（由长到短的横线）。 */
+export function SortIcon(): ReactElement {
+  return svg(<path d="M3 3.6h10M4.4 6.8h7.2M5.8 10h4.4M7.2 13.2h1.6" />);
+}
+
+/** 上级目录（文件夹 + 上箭头）。 */
+export function FolderUpIcon(): ReactElement {
+  return svg(
+    <>
+      <path d="M2 4.2h4.2l1.4 1.8h6.4v7.2H2V4.2z" />
+      <path d="M8 11.4V7.6M6.5 9.1L8 7.6l1.5 1.5" />
+    </>,
+  );
+}
+
+/** 引用（@ 圈）。 */
+export function MentionIcon(): ReactElement {
+  return svg(
+    <>
+      <circle cx="8" cy="8" r="2.6" />
+      <path d="M10.6 5.4v3.4c0 1 .6 1.6 1.4 1.3 1.2-.4 1.6-2 1-3.6A5.6 5.6 0 1 0 10.6 13" />
+    </>,
+  );
+}

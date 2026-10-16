@@ -301,6 +301,30 @@ export interface WorkspaceResolve {
   cwd: string;
 }
 
+/** P10-5：目录浏览条目（只列子目录）。 */
+export interface BrowseChild {
+  name: string;
+  path: string;
+}
+
+/** P10-5：GET /api/harness/workspaces/browse?path= 应答。 */
+export interface DirectoryListing {
+  path: string;
+  /** 上级目录（盘根为 null）。 */
+  parent: string | null;
+  /** 可用盘符/根（快速跳转按钮）。 */
+  roots: string[];
+  directories: BrowseChild[];
+  /** 非致命错误（目录不可读/不存在）；null = 正常。 */
+  error: string | null;
+}
+
+/** P10-6：DELETE /api/harness/workspaces/{code} 应答（unboundSessions = 被解绑回默认工作区的会话数）。 */
+export interface WorkspaceDeleteResult {
+  workspaceCode: string;
+  unboundSessions: number;
+}
+
 /** GET /api/harness/console/sessions/{id}/usage（F6：事件聚合；C3 状态栏扩展）。 */
 export interface SessionUsage {
   promptTokens: number;

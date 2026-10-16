@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { AgentProfile, AgentProfileInput, ReasoningEffort } from '../types';
+import { confirmAction } from '../lib/confirm';
 import {
   deleteProfile,
   listModelChannels,
@@ -217,7 +218,13 @@ export default function ProfileSettingsPanel(): ReactElement {
       toast('default 默认预设不可删除');
       return;
     }
-    if (!window.confirm(`确认删除预设「${profile.displayName || profile.profileCode}」？`)) {
+    const confirmed = await confirmAction({
+      title: '删除预设',
+      message: `确认删除预设「${profile.displayName || profile.profileCode}」？`,
+      confirmLabel: '删除',
+      danger: true,
+    });
+    if (!confirmed) {
       return;
     }
     setBusy(true);
@@ -253,72 +260,85 @@ export default function ProfileSettingsPanel(): ReactElement {
         </button>
       </div>
 
-      <table className="settings-table">
-        <thead>
-          <tr>
-            <th>名称</th>
-            <th>编码</th>
-            <th>说明</th>
-            <th>步数</th>
-            <th>工具画像</th>
-            <th>补丁摘要</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {profiles.map((profile) => (
-            <tr key={profile.profileCode}>
-              <td>{profile.displayName || profile.profileCode}</td>
-              <td>
-                {profile.profileCode}
-                {profile.profileCode === DEFAULT_PROFILE_CODE ? (
-                  <span className="badge badge--active">默认</span>
-                ) : null}
-              </td>
-              <td className="settings-table__desc" title={profile.description ?? ''}>
-                <span className="clamp-2">{profile.description || '—'}</span>
-              </td>
-              <td>{profile.maxStepsPerTurn}</td>
-              <td>{profile.toolProfile}</td>
-              <td className="settings-table__path">
-                {profile.promptExtra
-                  ? profile.promptExtra.length > 40
-                    ? `${profile.promptExtra.slice(0, 40)}…`
-                    : profile.promptExtra
-                  : '—'}
-              </td>
-              <td className="settings-table__actions">
-                <button
-                  type="button"
-                  className="btn btn--small"
-                  disabled={busy}
-                  onClick={() => setForm(toForm(profile))}
-                >
-                  编辑
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--small btn--danger"
-                  disabled={busy}
-                  title={
-                    profile.profileCode === DEFAULT_PROFILE_CODE
-                      ? 'default 默认预设不可删除'
-                      : '删除预设'
-                  }
-                  onClick={() => void handleDelete(profile)}
-                >
-                  删除
-                </button>
-              </td>
-            </tr>
-          ))}
-          {profiles.length === 0 ? (
+      <div className="settings-table-wrap settings-table-wrap--profiles">
+        <table className="settings-table">
+          <colgroup>
+            <col style={{ width: '15%' }} />
+            <col style={{ width: '15%' }} />
+            <col style={{ width: '22%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '15%' }} />
+            <col style={{ width: '14%' }} />
+          </colgroup>
+          <thead>
             <tr>
-              <td colSpan={7}>加载中或暂无预设…</td>
+              <th>名称</th>
+              <th>编码</th>
+              <th>说明</th>
+              <th>步数</th>
+              <th>工具画像</th>
+              <th>补丁摘要</th>
+              <th>操作</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {profiles.map((profile) => (
+              <tr key={profile.profileCode}>
+                <td>{profile.displayName || profile.profileCode}</td>
+                <td className="settings-table__mono">
+                  {profile.profileCode}
+                  {profile.profileCode === DEFAULT_PROFILE_CODE ? (
+                    <span className="badge badge--active">默认</span>
+                  ) : null}
+                </td>
+                <td className="settings-table__desc" title={profile.description ?? ''}>
+                  {profile.description || '—'}
+                </td>
+                <td className="settings-table__center">{profile.maxStepsPerTurn}</td>
+                <td>{profile.toolProfile}</td>
+                <td className="settings-table__path" title={profile.promptExtra ?? ''}>
+                  {profile.promptExtra
+                    ? profile.promptExtra.length > 40
+                      ? `${profile.promptExtra.slice(0, 40)}…`
+                      : profile.promptExtra
+                    : '—'}
+                </td>
+                <td className="settings-table__actions">
+                  <button
+                    type="button"
+                    className="btn btn--small"
+                    disabled={busy}
+                    onClick={() => setForm(toForm(profile))}
+                  >
+                    编辑
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--small btn--danger"
+                    disabled={busy}
+                    title={
+                      profile.profileCode === DEFAULT_PROFILE_CODE
+                        ? 'default 默认预设不可删除'
+                        : '删除预设'
+                    }
+                    onClick={() => void handleDelete(profile)}
+                  >
+                    删除
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {profiles.length === 0 ? (
+              <tr>
+                <td className="settings-empty" colSpan={7}>
+                  暂无预设，点击右上角「新建预设」添加。
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
 
       {form ? (
         <div className="settings-form">

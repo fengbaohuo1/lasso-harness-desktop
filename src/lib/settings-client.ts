@@ -7,6 +7,8 @@ import { apiRequest } from './agent-client';
 import type {
   AgentProfile,
   AgentProfileInput,
+  DirectoryListing,
+  WorkspaceDeleteResult,
   WorkspaceItem,
   WorkspaceResolve,
 } from '../types';
@@ -250,12 +252,24 @@ export function updateWorkspace(
   );
 }
 
-/** 删除工作区；内置工作区禁删（后端 40000，错误信息经 toast 呈现）。 */
-export function deleteWorkspace(workspaceCode: string): Promise<void> {
-  return apiRequest<void>(
+/**
+ * 删除工作区；内置工作区禁删（后端 40000，错误信息经 toast 呈现）。
+ * 返回 `unboundSessions` = 被解绑回默认工作区的会话数（P10-6）。
+ */
+export function deleteWorkspace(workspaceCode: string): Promise<WorkspaceDeleteResult> {
+  return apiRequest<WorkspaceDeleteResult>(
     `/api/harness/workspaces/${encodeURIComponent(workspaceCode)}`,
     'DELETE',
   );
+}
+
+/**
+ * 目录浏览（P10-5）：新建/编辑工作区时挑根目录。
+ * `path` 留空 → 从用户主目录起；不可读路径不抛异常，`error` 字段带文案。
+ */
+export function browseDirectories(path?: string | null): Promise<DirectoryListing> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : '';
+  return apiRequest<DirectoryListing>(`/api/harness/workspaces/browse${query}`);
 }
 
 /** 解析会话当前工作区（cwd）。 */

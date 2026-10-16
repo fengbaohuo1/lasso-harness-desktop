@@ -15,6 +15,7 @@ import {
 } from '../lib/settings-client';
 import type { PluginItem } from '../lib/settings-client';
 import { executePluginAction, formValueToKv, isUiSupported, kvToFormValue, type FormValue } from '../lib/plugin-ui';
+import { confirmAction } from '../lib/confirm';
 import { toast } from '../lib/toast';
 import type { PluginUiAction, PluginUiField, PluginUiManifest, PluginSettingsPage } from '../types';
 
@@ -73,50 +74,57 @@ function KvConfigEditor({ pluginId }: { pluginId: string }): ReactElement {
   return (
     <div className="settings-form">
       {error ? <div className="banner banner--error">{error}</div> : null}
-      <table className="settings-table">
-        <thead>
-          <tr>
-            <th>键</th>
-            <th>值</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={`${row.key}-${index}`}>
-              <td>
-                <input
-                  value={row.key}
-                  onChange={(e) =>
-                    setRows((prev) =>
-                      prev.map((r, i) => (i === index ? { ...r, key: e.target.value } : r)),
-                    )
-                  }
-                />
-              </td>
-              <td>
-                <input
-                  value={row.value}
-                  onChange={(e) =>
-                    setRows((prev) =>
-                      prev.map((r, i) => (i === index ? { ...r, value: e.target.value } : r)),
-                    )
-                  }
-                />
-              </td>
-              <td>
-                <button
-                  type="button"
-                  className="btn btn--small btn--danger"
-                  onClick={() => void handleDeleteRow(row.key)}
-                >
-                  删除
-                </button>
-              </td>
+      <div className="settings-table-wrap settings-table-wrap--kv">
+        <table className="settings-table">
+          <colgroup>
+            <col style={{ width: '30%' }} />
+            <col style={{ width: '55%' }} />
+            <col style={{ width: '15%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>键</th>
+              <th>值</th>
+              <th>操作</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={`${row.key}-${index}`}>
+                <td>
+                  <input
+                    value={row.key}
+                    onChange={(e) =>
+                      setRows((prev) =>
+                        prev.map((r, i) => (i === index ? { ...r, key: e.target.value } : r)),
+                      )
+                    }
+                  />
+                </td>
+                <td>
+                  <input
+                    value={row.value}
+                    onChange={(e) =>
+                      setRows((prev) =>
+                        prev.map((r, i) => (i === index ? { ...r, value: e.target.value } : r)),
+                      )
+                    }
+                  />
+                </td>
+                <td className="settings-table__center">
+                  <button
+                    type="button"
+                    className="btn btn--small btn--danger"
+                    onClick={() => void handleDeleteRow(row.key)}
+                  >
+                    删除
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className="settings-form__actions">
         <button
           type="button"
@@ -250,9 +258,17 @@ function SettingsPageForm({
     }
   };
 
-  const runAction = (action: PluginUiAction): void => {
-    if (action.confirm && !window.confirm(action.confirm)) {
-      return;
+  const runAction = async (action: PluginUiAction): Promise<void> => {
+    if (action.confirm) {
+      const confirmed = await confirmAction({
+        title: action.label,
+        message: action.confirm,
+        confirmLabel: '执行',
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
     }
     const body =
       (action.bodyFrom ?? '') === 'form'
@@ -308,7 +324,7 @@ function SettingsPageForm({
               type="button"
               className="btn btn--small"
               disabled={busy}
-              onClick={() => runAction(action)}
+              onClick={() => void runAction(action)}
             >
               {action.label}
             </button>

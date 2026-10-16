@@ -14,6 +14,8 @@ import ProfileSettingsPanel from './ProfileSettingsPanel';
 import ToolCatalogPanel from './ToolCatalogPanel';
 import WorkspacePanel from './WorkspacePanel';
 import {
+  CloseIcon,
+  GearIcon,
   InfoIcon,
   ModelIcon,
   PluginIcon,
@@ -94,9 +96,12 @@ export default function SettingsDialog({
     <div className="settings-overlay" role="dialog" aria-modal="true">
       <div className="settings-dialog">
         <header className="settings-dialog__header">
-          <div className="settings-dialog__title">设置</div>
-          <button type="button" className="btn btn--small" onClick={onClose}>
-            关闭
+          <div className="settings-dialog__title">
+            <GearIcon />
+            <span>设置</span>
+          </div>
+          <button type="button" className="icon-btn" title="关闭（Esc）" onClick={onClose}>
+            <CloseIcon />
           </button>
         </header>
         <div className="settings-dialog__body">

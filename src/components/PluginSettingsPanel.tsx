@@ -126,67 +126,76 @@ export default function PluginSettingsPanel(): ReactElement {
           重载插件 UI
         </button>
       </div>
-      <table className="settings-table">
-        <thead>
-          <tr>
-            <th>插件</th>
-            <th>版本</th>
-            <th>运行时</th>
-            <th>状态</th>
-            <th>运行态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {plugins.map((plugin) => (
-            <Fragment key={plugin.pluginId}>
-              <tr>
-                <td>
-                  {plugin.pluginId}
-                  {plugin.displayName && plugin.displayName !== plugin.pluginId
-                    ? ` · ${plugin.displayName}`
-                    : ''}
-                  {plugin.hasUi ? (
-                    <span className="badge badge--active settings-table__ui-badge" title="声明了 UI 贡献清单（工具卡渲染/配置页面）">
-                      UI
-                    </span>
-                  ) : null}
-                </td>
-                <td>{plugin.pluginVersion}</td>
-                <td>{plugin.runtimeType}</td>
-                <td>
-                  <span
-                    className={`status-dot${
-                      plugin.status === 'ACTIVE'
-                        ? ' status-dot--ok'
-                        : plugin.status === 'FAILED'
-                          ? ' status-dot--error'
-                          : ''
-                    }`}
-                    title={plugin.status}
-                  />
-                </td>
-                <td>{plugin.runtimeState}</td>
-                <td className="settings-table__actions">
-                  {plugin.status !== 'ACTIVE' ? (
-                    <button
-                      type="button"
-                      className="btn btn--small"
-                      disabled={busy}
-                      onClick={() => run(() => activatePlugin(plugin.pluginId), `已启用 ${plugin.pluginId}`)}
-                    >
-                      启用
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn--small"
-                      disabled={busy}
-                      onClick={() => run(() => disablePlugin(plugin.pluginId), `已停用 ${plugin.pluginId}`)}
-                    >
-                      停用
-                    </button>
-                  )}
+      <div className="settings-table-wrap settings-table-wrap--plugins">
+        <table className="settings-table">
+          <colgroup>
+            <col style={{ width: '24%' }} />
+            <col style={{ width: '9%' }} />
+            <col style={{ width: '13%' }} />
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '13%' }} />
+            <col style={{ width: '33%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>插件</th>
+              <th>版本</th>
+              <th>运行时</th>
+              <th>状态</th>
+              <th>运行态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plugins.map((plugin) => (
+              <Fragment key={plugin.pluginId}>
+                <tr>
+                  <td>
+                    {plugin.pluginId}
+                    {plugin.displayName && plugin.displayName !== plugin.pluginId
+                      ? ` · ${plugin.displayName}`
+                      : ''}
+                    {plugin.hasUi ? (
+                      <span className="badge badge--active settings-table__ui-badge" title="声明了 UI 贡献清单（工具卡渲染/配置页面）">
+                        UI
+                      </span>
+                    ) : null}
+                  </td>
+                  <td>{plugin.pluginVersion}</td>
+                  <td>{plugin.runtimeType}</td>
+                  <td className="settings-table__center">
+                    <span
+                      className={`status-dot${
+                        plugin.status === 'ACTIVE'
+                          ? ' status-dot--ok'
+                          : plugin.status === 'FAILED'
+                            ? ' status-dot--error'
+                            : ''
+                      }`}
+                      title={plugin.status}
+                    />
+                  </td>
+                  <td>{plugin.runtimeState}</td>
+                  <td className="settings-table__actions">
+                    {plugin.status !== 'ACTIVE' ? (
+                      <button
+                        type="button"
+                        className="btn btn--small"
+                        disabled={busy}
+                        onClick={() => run(() => activatePlugin(plugin.pluginId), `已启用 ${plugin.pluginId}`)}
+                      >
+                        启用
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn--small"
+                        disabled={busy}
+                        onClick={() => run(() => disablePlugin(plugin.pluginId), `已停用 ${plugin.pluginId}`)}
+                      >
+                        停用
+                      </button>
+                    )}
                   <button
                     type="button"
                     className="btn btn--small"
@@ -274,66 +283,79 @@ export default function PluginSettingsPanel(): ReactElement {
               ) : null}
             </Fragment>
           ))}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
 
       <h3>可安装（插件目录）</h3>
-      <table className="settings-table">
-        <thead>
-          <tr>
-            <th>插件</th>
-            <th>版本</th>
-            <th>运行时</th>
-            <th>说明</th>
-            <th>状态</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {catalog.map((item) => (
-            <tr key={`${item.pluginId}-${item.sourcePath}`}>
-              <td>{item.pluginId}</td>
-              <td>{item.version}</td>
-              <td>{item.runtimeType}</td>
-              <td className="settings-table__desc" title={item.description || item.sourcePath}>
-                <span className="clamp-2">{item.description || item.sourcePath}</span>
-              </td>
-              <td>
-                {item.installed ? (
-                  <span className="status-dot status-dot--ok" title="已安装" />
-                ) : (
-                  '—'
-                )}
-              </td>
-              <td>
-                {item.installed ? null : (
-                  <button
-                    type="button"
-                    className="btn btn--small"
-                    disabled={busy}
-                    onClick={() =>
-                      run(
-                        () =>
-                          installPlugin({
-                            pluginId: item.pluginId,
-                            displayName: item.displayName,
-                            pluginVersion: item.version,
-                            runtimeType: item.runtimeType,
-                            sourcePath: item.sourcePath,
-                            entrypoint: item.entrypoint,
-                          }),
-                        `已安装 ${item.pluginId}`,
-                      )
-                    }
-                  >
-                    安装
-                  </button>
-                )}
-              </td>
+      <div className="settings-table-wrap settings-table-wrap--catalog">
+        <table className="settings-table">
+          <colgroup>
+            <col style={{ width: '24%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '38%' }} />
+            <col style={{ width: '14%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>插件</th>
+              <th>版本</th>
+              <th>运行时</th>
+              <th>说明</th>
+              <th>操作</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {catalog.map((item) => (
+              <tr key={`${item.pluginId}-${item.sourcePath}`}>
+                <td>{item.pluginId}</td>
+                <td>{item.version}</td>
+                <td>{item.runtimeType}</td>
+                <td className="settings-table__desc" title={item.description || item.sourcePath}>
+                  {item.description || item.sourcePath}
+                </td>
+                <td className="settings-table__actions">
+                  {item.installed ? (
+                    <span className="settings-table__muted" title="该插件已在插件目录中激活">
+                      已安装
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn--small"
+                      disabled={busy}
+                      onClick={() =>
+                        run(
+                          () =>
+                            installPlugin({
+                              pluginId: item.pluginId,
+                              displayName: item.displayName,
+                              pluginVersion: item.version,
+                              runtimeType: item.runtimeType,
+                              sourcePath: item.sourcePath,
+                              entrypoint: item.entrypoint,
+                            }),
+                          `已安装 ${item.pluginId}`,
+                        )
+                      }
+                    >
+                      安装
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {catalog.length === 0 ? (
+              <tr>
+                <td className="settings-empty" colSpan={5}>
+                  插件目录为空。
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

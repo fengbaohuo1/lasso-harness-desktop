@@ -1,332 +1,491 @@
 /**
- * 会话侧栏（F3）：新对话 + 搜索 + 时间分组 + 行悬浮操作（重命名/删除）+ 折叠。
- * - 会话标题取 meta.title，无 title 显示截断 id；
- * - 时间分组：今天 / 近 7 天 / 更早；相对时间（刚刚/N 分钟前/昨天/日期）；
- * - 重命名内联输入（Enter 确认 / Esc 取消）；删除有确认小弹层；
- * - 折叠态约 64px 图标列（会话首字符按钮 + 展开按钮）。
+ * 侧栏（P10-1 重写）：对齐 dsh 主页面的左栏骨架。
+ *
+ * 结构（自上而下）：品牌行 → 「新会话」主按钮 → 「插件」入口 → 「工作区」段头（搜索/排序/新建三个图标）
+ * → 工作区分组树（组内嵌会话，单行：标题左、相对时间右，悬浮出重命名/删除）→ 底部（主题/设置/服务状态）。
+ *
+ * 数据都由 App 持有，本组件只做呈现与交互转发（重命名保留行内输入，避免再开弹层）。
  */
 
-import { useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react';
-import type { SessionSummary, TimeLike } from '../types';
-import { EditIcon, PanelIcon, PlusIcon, SearchIcon, TrashIcon } from './icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactElement } from 'react';
+import type { SessionSummary, WorkspaceItem } from '../types';
+import { THEME_MODE_LABEL } from '../lib/theme';
+import type { ThemeMode } from '../lib/theme';
+import {
+  ChevronIcon,
+  EditIcon,
+  GearIcon,
+  MonitorIcon,
+  MoonIcon,
+  NewChatIcon,
+  PanelIcon,
+  PluginIcon,
+  PlusIcon,
+  SearchIcon,
+  SortIcon,
+  SunIcon,
+  TrashIcon,
+  WorkspaceIcon,
+} from './icons';
 
-export interface SidebarProps {
+/** 默认工作区码（后端 WorkspaceEntry.DEFAULT_CODE）。 */
+const DEFAULT_WORKSPACE = 'default';
+
+/** 会话排序模式（P10-1：段头排序图标循环切换，localStorage 记忆）。 */
+type SortMode = 'recent' | 'name';
+const SORT_KEY = 'jnf-session-sort';
+const SORT_LABEL: Record<SortMode, string> = { recent: '按最近活动', name: '按名称' };
+
+interface Props {
   sessions: SessionSummary[];
-  activeId: string;
+  workspaces: WorkspaceItem[];
+  activeId: string | null;
   collapsed: boolean;
+  themeMode: ThemeMode;
+  /** 服务状态文案（如「服务运行中 · :39217」）。 */
+  serviceLabel: string;
+  serviceRunning: boolean;
+  /** 插件计数徽标（0 时不显示）。 */
+  pluginCount: number;
   onSelect: (sessionId: string) => void;
   onNew: () => void;
   onRename: (sessionId: string, title: string) => void;
   onDelete: (sessionId: string) => void;
   onToggleCollapse: () => void;
+  onOpenPlugins: () => void;
+  onOpenSettings: () => void;
+  onToggleTheme: () => void;
+  onNewWorkspace: () => void;
+  onEditWorkspace: (workspace: WorkspaceItem) => void;
+  onDeleteWorkspace: (workspace: WorkspaceItem) => void;
 }
 
-function label(sessionId: string): string {
-  return sessionId.length > 18 ? `${sessionId.slice(0, 12)}…${sessionId.slice(-4)}` : sessionId;
-}
+/* ----------------------------- 时间与标题工具 ----------------------------- */
 
-function titleOf(session: SessionSummary): string {
-  const title = session.title?.trim();
-  return title && title.length > 0 ? title : label(session.sessionId);
-}
-
-/** 时间字段兼容 epoch 毫秒 / ISO 字符串。 */
-function toMillis(value: TimeLike): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
+function toMillis(value: number | string | null | undefined): number {
+  if (value == null) {
+    return 0;
   }
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Date.parse(value);
-    if (!Number.isNaN(parsed)) {
-      return parsed;
-    }
+  if (typeof value === 'number') {
+    return value < 1e12 ? Math.round(value * 1000) : value;
   }
-  return undefined;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function sessionTime(session: SessionSummary): number | undefined {
-  return toMillis(session.lastEventAt) ?? toMillis(session.createdAt);
+/** 会话活动时间（优先 lastEventAt，回落 createdAt）。 */
+function sessionTime(session: SessionSummary): number {
+  return toMillis(session.lastEventAt) || toMillis(session.createdAt);
 }
 
-function relativeTime(ms: number): string {
-  const diff = Date.now() - ms;
+/** 紧凑相对时间（对齐 dsh：刚刚 / 12分 / 3时 / 2天 / 月-日）。 */
+function compactTime(millis: number): string {
+  if (!millis) {
+    return '';
+  }
+  const diff = Date.now() - millis;
   if (diff < 60_000) {
     return '刚刚';
   }
   if (diff < 3_600_000) {
-    return `${Math.floor(diff / 60_000)} 分钟前`;
+    return `${Math.floor(diff / 60_000)}分`;
   }
-  const date = new Date(ms);
-  const today = new Date();
-  const isToday =
-    date.getFullYear() === today.getFullYear() &&
-    date.getMonth() === today.getMonth() &&
-    date.getDate() === today.getDate();
-  if (isToday) {
-    return `${Math.floor(diff / 3_600_000)} 小时前`;
+  if (diff < 86_400_000) {
+    return `${Math.floor(diff / 3_600_000)}时`;
   }
-  const yesterday = new Date(today.getTime() - 86_400_000);
-  const isYesterday =
-    date.getFullYear() === yesterday.getFullYear() &&
-    date.getMonth() === yesterday.getMonth() &&
-    date.getDate() === yesterday.getDate();
-  if (isYesterday) {
-    return '昨天';
+  if (diff < 30 * 86_400_000) {
+    return `${Math.floor(diff / 86_400_000)}天`;
   }
-  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+  const date = new Date(millis);
+  return `${date.getMonth() + 1}-${date.getDate()}`;
 }
 
-type GroupName = '今天' | '近 7 天' | '更早';
-
-function groupName(ms: number | undefined): GroupName {
-  if (ms === undefined) {
-    return '更早';
-  }
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  if (ms >= startOfToday) {
-    return '今天';
-  }
-  if (ms >= startOfToday - 6 * 86_400_000) {
-    return '近 7 天';
-  }
-  return '更早';
+function titleOf(session: SessionSummary): string {
+  const title = (session.title ?? '').trim();
+  return title || '未命名会话';
 }
 
-const GROUP_ORDER: GroupName[] = ['今天', '近 7 天', '更早'];
+/** 会话行悬浮提示：标题 + 事件数 + 绝对时间（列表里只留标题与相对时间，保持单行清爽）。 */
+function hintOf(session: SessionSummary): string {
+  const count = session.eventCount ?? session.events ?? 0;
+  const stamp = new Date(sessionTime(session)).toLocaleString('zh-CN', { hour12: false });
+  return `${titleOf(session)}${count > 0 ? ` · ${count} 事件` : ''} · ${stamp}`;
+}
+
+function loadSortMode(): SortMode {
+  try {
+    return window.localStorage.getItem(SORT_KEY) === 'name' ? 'name' : 'recent';
+  } catch {
+    return 'recent';
+  }
+}
 
 export default function Sidebar({
   sessions,
+  workspaces,
   activeId,
   collapsed,
+  themeMode,
+  serviceLabel,
+  serviceRunning,
+  pluginCount,
   onSelect,
   onNew,
   onRename,
   onDelete,
   onToggleCollapse,
-}: SidebarProps): ReactElement {
+  onOpenPlugins,
+  onOpenSettings,
+  onToggleTheme,
+  onNewWorkspace,
+  onEditWorkspace,
+  onDeleteWorkspace,
+}: Props): ReactElement {
   const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>(loadSortMode);
+  /** 已折叠的工作区码（默认全展开）。 */
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  // Enter/Esc 提交后输入框卸载会再触发一次 onBlur（闭包里还是旧值），
-  // 用一次性闸门挡住重复提交/把已放弃的草稿又提交出去
+  /** 一次性闸门：Enter 提交后 onBlur 会再触发一次，避免重复提交。 */
   const renameSettledRef = useRef(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (searchOpen) {
+      searchRef.current?.focus();
+    }
+  }, [searchOpen]);
+
+  const cycleSort = (): void => {
+    const next: SortMode = sortMode === 'recent' ? 'name' : 'recent';
+    setSortMode(next);
+    try {
+      window.localStorage.setItem(SORT_KEY, next);
+    } catch {
+      // 忽略隐私模式下的写入失败
+    }
+  };
 
   const keyword = query.trim().toLowerCase();
-  const filtered = keyword
-    ? sessions.filter(
-        (session) =>
-          session.sessionId.toLowerCase().includes(keyword) ||
-          (session.title ?? '').toLowerCase().includes(keyword),
-      )
-    : sessions;
 
-  const grouped = new Map<GroupName, SessionSummary[]>();
-  for (const session of filtered) {
-    const group = groupName(sessionTime(session));
-    const bucket = grouped.get(group);
-    if (bucket) {
-      bucket.push(session);
-    } else {
-      grouped.set(group, [session]);
+  /** 工作区分组：先按工作区列，再把会话挂到各自工作区；无工作区码/码失效的会话归默认组。 */
+  const groups = useMemo(() => {
+    const byCode = new Map<string, SessionSummary[]>();
+    for (const session of sessions) {
+      const code = session.workspaceCode && workspaces.some((w) => w.workspaceCode === session.workspaceCode)
+        ? session.workspaceCode
+        : DEFAULT_WORKSPACE;
+      const list = byCode.get(code);
+      if (list) {
+        list.push(session);
+      } else {
+        byCode.set(code, [session]);
+      }
     }
-  }
+    const ordered = [...workspaces].sort((a, b) => {
+      if (a.workspaceCode === DEFAULT_WORKSPACE) {
+        return -1;
+      }
+      if (b.workspaceCode === DEFAULT_WORKSPACE) {
+        return 1;
+      }
+      return a.displayName.localeCompare(b.displayName, 'zh-Hans-CN');
+    });
+    return ordered.map((workspace) => {
+      const raw = byCode.get(workspace.workspaceCode) ?? [];
+      const filtered = keyword
+        ? raw.filter((session) => titleOf(session).toLowerCase().includes(keyword))
+        : raw;
+      const sorted = [...filtered].sort((a, b) =>
+        sortMode === 'name'
+          ? titleOf(a).localeCompare(titleOf(b), 'zh-Hans-CN')
+          : sessionTime(b) - sessionTime(a),
+      );
+      return { workspace, sessions: sorted, total: raw.length };
+    });
+  }, [sessions, workspaces, keyword, sortMode]);
+
+  /** 搜索时也按工作区名过滤整组（搜「docs」要能看到 docs 组）。 */
+  const visibleGroups = keyword
+    ? groups.filter(
+        (group) =>
+          group.sessions.length > 0 ||
+          group.workspace.displayName.toLowerCase().includes(keyword) ||
+          group.workspace.workspaceCode.toLowerCase().includes(keyword),
+      )
+    : groups;
 
   const startRename = (session: SessionSummary): void => {
-    setConfirmDeleteId(null);
     renameSettledRef.current = false;
     setRenamingId(session.sessionId);
-    setRenameDraft(session.title ?? '');
+    setRenameDraft(titleOf(session));
   };
 
   const commitRename = (): void => {
-    if (renameSettledRef.current) {
+    if (!renamingId || renameSettledRef.current) {
       return;
     }
     renameSettledRef.current = true;
+    const next = renameDraft.trim();
     const id = renamingId;
     setRenamingId(null);
-    if (id) {
-      const title = renameDraft.trim();
-      if (title) {
-        onRename(id, title);
-      }
+    if (next) {
+      onRename(id, next);
     }
   };
 
-  const cancelRename = (): void => {
-    renameSettledRef.current = true;
-    setRenamingId(null);
-    setRenameDraft('');
+  const toggleGroup = (code: string): void => {
+    setCollapsedGroups((prev) => ({ ...prev, [code]: !prev[code] }));
   };
 
-  const handleRenameKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      commitRename();
-    } else if (e.key === 'Escape') {
-      // Esc 只取消重命名，不停止生成（吞掉事件，App 全局快捷键不可见）
-      e.preventDefault();
-      e.stopPropagation();
-      cancelRename();
-    }
-  };
+  const ThemeIcon = themeMode === 'system' ? MonitorIcon : themeMode === 'dark' ? MoonIcon : SunIcon;
 
-  const renderRow = (session: SessionSummary): ReactElement => {
-    const time = sessionTime(session);
-    const active = session.sessionId === activeId;
-    if (renamingId === session.sessionId) {
-      return (
-        <div key={session.sessionId} className="sidebar__row sidebar__row--active">
-          <input
-            className="sidebar__rename"
-            value={renameDraft}
-            autoFocus
-            aria-label="重命名会话"
-            onChange={(e) => setRenameDraft(e.target.value)}
-            onKeyDown={handleRenameKeyDown}
-            onBlur={commitRename}
-          />
-        </div>
-      );
-    }
+  /* ----------------------------- 折叠态 ----------------------------- */
+
+  if (collapsed) {
     return (
-      <div
-        key={session.sessionId}
-        className={active ? 'sidebar__row sidebar__row--active' : 'sidebar__row'}
-      >
+      <aside className="sidebar sidebar--collapsed">
+        <div className="sidebar__brand sidebar__brand--rail">
+          <span className="sidebar__logo-mark">◆</span>
+        </div>
+        <button type="button" className="icon-btn icon-btn--lg" title="展开侧栏" onClick={onToggleCollapse}>
+          <PanelIcon />
+        </button>
+        <button type="button" className="icon-btn icon-btn--lg" title="新会话" onClick={onNew}>
+          <NewChatIcon />
+        </button>
+        <button type="button" className="icon-btn icon-btn--lg" title="插件" onClick={onOpenPlugins}>
+          <PluginIcon />
+        </button>
+        <div className="sidebar__rail" />
+        {groups.map((group) => (
+          <button
+            key={group.workspace.workspaceCode}
+            type="button"
+            className="icon-btn icon-btn--lg"
+            title={`${group.workspace.displayName}（${group.total}）· 点击展开侧栏`}
+            onClick={onToggleCollapse}
+          >
+            <WorkspaceIcon />
+          </button>
+        ))}
+        <div className="sidebar__spacer" />
         <button
           type="button"
-          className="sidebar__item"
-          title={titleOf(session)}
-          onClick={() => onSelect(session.sessionId)}
+          className="icon-btn icon-btn--lg"
+          title={`主题：${THEME_MODE_LABEL[themeMode]}`}
+          onClick={onToggleTheme}
         >
-          <span className="sidebar__item-title sidebar__item-title--plain">
-            {titleOf(session)}
-          </span>
-          <span className="sidebar__item-meta">
-            {time !== undefined ? relativeTime(time) : ''}
-            {` · ${session.eventCount ?? session.events} 事件`}
-          </span>
+          <ThemeIcon />
         </button>
-        <div className="sidebar__actions">
-          <button
-            type="button"
-            className="sidebar__action"
-            title="重命名"
-            aria-label="重命名会话"
-            onClick={() => startRename(session)}
-          >
-            <EditIcon />
-          </button>
-          <button
-            type="button"
-            className="sidebar__action sidebar__action--danger"
-            title="删除"
-            aria-label="删除会话"
-            onClick={() => setConfirmDeleteId(session.sessionId)}
-          >
-            <TrashIcon />
-          </button>
-        </div>
-        {confirmDeleteId === session.sessionId ? (
-          <div className="sidebar__confirm" role="dialog" aria-label="删除确认">
-            删除会话「{titleOf(session)}」？事件记录保留可审计。
-            <div className="sidebar__confirm-actions">
-              <button
-                type="button"
-                className="btn btn--small"
-                onClick={() => setConfirmDeleteId(null)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="btn btn--small btn--danger"
-                onClick={() => {
-                  setConfirmDeleteId(null);
-                  onDelete(session.sessionId);
-                }}
-              >
-                删除
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </div>
+        <button type="button" className="icon-btn icon-btn--lg" title="设置" onClick={onOpenSettings}>
+          <GearIcon />
+        </button>
+        <span className={`status-dot${serviceRunning ? ' status-dot--on' : ''}`} title={serviceLabel} />
+      </aside>
     );
-  };
+  }
 
-  const renderCollapsedRow = (session: SessionSummary): ReactElement => (
-    <div
-      key={session.sessionId}
-      className={session.sessionId === activeId ? 'sidebar__row sidebar__row--active' : 'sidebar__row'}
-    >
-      <button
-        type="button"
-        className="sidebar__item"
-        title={titleOf(session)}
-        onClick={() => onSelect(session.sessionId)}
-      >
-        <span className="sidebar__item-title sidebar__item-title--plain">
-          {titleOf(session).slice(0, 1)}
-        </span>
-      </button>
-    </div>
-  );
+  /* ----------------------------- 展开态 ----------------------------- */
 
   return (
-    <aside className={collapsed ? 'sidebar sidebar--collapsed' : 'sidebar'}>
-      <button
-        type="button"
-        className="icon-btn"
-        title={collapsed ? '展开侧栏' : '折叠侧栏'}
-        aria-label={collapsed ? '展开侧栏' : '折叠侧栏'}
-        onClick={onToggleCollapse}
-      >
-        <PanelIcon />
+    <aside className="sidebar">
+      <div className="sidebar__brand">
+        <span className="sidebar__logo">
+          <span className="sidebar__logo-mark">◆</span>
+          jnf
+          <span className="sidebar__logo-tag">HARNESS</span>
+        </span>
+        <button type="button" className="icon-btn" title="折叠侧栏" onClick={onToggleCollapse}>
+          <PanelIcon />
+        </button>
+      </div>
+
+      <button type="button" className="sidebar__cta" onClick={onNew}>
+        <NewChatIcon />
+        <span>新会话</span>
       </button>
-      <button type="button" className="sidebar__new" onClick={onNew} title="新对话（Ctrl+N）">
-        {collapsed ? <PlusIcon /> : (
-          <>
-            <span aria-hidden="true">＋</span> 新对话
-          </>
-        )}
+
+      <button type="button" className="sidebar__entry" onClick={onOpenPlugins}>
+        <PluginIcon />
+        <span>插件</span>
+        {pluginCount > 0 ? <span className="sidebar__entry-count">{pluginCount}</span> : null}
       </button>
-      {!collapsed ? (
+
+      <div className="sidebar__secthead">
+        <span className="sidebar__secthead-title">工作区</span>
+        <span className="sidebar__sectacts">
+          <button
+            type="button"
+            className={`icon-btn${searchOpen ? ' icon-btn--active' : ''}`}
+            title="搜索会话"
+            onClick={() => setSearchOpen((prev) => !prev)}
+          >
+            <SearchIcon />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            title={`排序：${SORT_LABEL[sortMode]}（点击切换）`}
+            onClick={cycleSort}
+          >
+            <SortIcon />
+          </button>
+          <button type="button" className="icon-btn" title="新建工作区" onClick={onNewWorkspace}>
+            <PlusIcon />
+          </button>
+        </span>
+      </div>
+
+      {searchOpen ? (
         <input
+          ref={searchRef}
           className="sidebar__search"
           value={query}
-          placeholder="搜索会话"
-          aria-label="搜索会话"
+          placeholder="搜索会话或工作区"
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setQuery('');
+              setSearchOpen(false);
+            }
+          }}
         />
       ) : null}
-      {!collapsed ? <div className="sidebar__section">会话</div> : null}
-      <nav className="sidebar__list">
-        {filtered.length === 0 ? (
-          <div className="sidebar__empty">
-            {keyword ? '无匹配会话' : '暂无历史会话'}
-          </div>
-        ) : (
-          GROUP_ORDER.filter((group) => (grouped.get(group) ?? []).length > 0).map((group) => (
-            <div key={group}>
-              {!collapsed ? <div className="sidebar__group">{group}</div> : null}
-              {(grouped.get(group) ?? []).map((session) =>
-                collapsed ? renderCollapsedRow(session) : renderRow(session),
-              )}
+
+      <div className="sidebar__tree">
+        {visibleGroups.map((group) => {
+          const code = group.workspace.workspaceCode;
+          const open = !collapsedGroups[code];
+          return (
+            <div className="wsgroup" key={code}>
+              <div className="wsgroup__head">
+                <button
+                  type="button"
+                  className="wsgroup__toggle"
+                  title={open ? '折叠' : '展开'}
+                  onClick={() => toggleGroup(code)}
+                >
+                  <span className={`wsgroup__chev${open ? ' wsgroup__chev--open' : ''}`}>
+                    <ChevronIcon />
+                  </span>
+                  <span className="wsgroup__name" title={group.workspace.rootPath}>
+                    {group.workspace.displayName}
+                  </span>
+                  <span className="wsgroup__count">{group.total}</span>
+                </button>
+                <span className="wsgroup__acts">
+                  <button
+                    type="button"
+                    className="icon-btn icon-btn--sm"
+                    title="编辑工作区"
+                    onClick={() => onEditWorkspace(group.workspace)}
+                  >
+                    <EditIcon />
+                  </button>
+                  {code === DEFAULT_WORKSPACE ? null : (
+                    <button
+                      type="button"
+                      className="icon-btn icon-btn--sm"
+                      title="删除工作区"
+                      onClick={() => onDeleteWorkspace(group.workspace)}
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
+                </span>
+              </div>
+
+              {open ? (
+                <div className="wsgroup__sessions">
+                  {group.sessions.map((session) => {
+                    const active = session.sessionId === activeId;
+                    if (session.sessionId === renamingId) {
+                      return (
+                        <div className="session session--editing" key={session.sessionId}>
+                          <input
+                            className="session__rename"
+                            value={renameDraft}
+                            autoFocus
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            onBlur={commitRename}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                commitRename();
+                              } else if (e.key === 'Escape') {
+                                renameSettledRef.current = true;
+                                setRenamingId(null);
+                              }
+                            }}
+                          />
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        className={`session${active ? ' session--active' : ''}`}
+                        key={session.sessionId}
+                        title={hintOf(session)}
+                        onClick={() => onSelect(session.sessionId)}
+                      >
+                        <span className="session__title">{titleOf(session)}</span>
+                        <span className="session__time">{compactTime(sessionTime(session))}</span>
+                        <span className="session__acts">
+                          <button
+                            type="button"
+                            className="icon-btn icon-btn--sm"
+                            title="重命名"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startRename(session);
+                            }}
+                          >
+                            <EditIcon />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-btn icon-btn--sm"
+                            title="删除会话"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDelete(session.sessionId);
+                            }}
+                          >
+                            <TrashIcon />
+                          </button>
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {group.sessions.length === 0 ? (
+                    <p className="wsgroup__empty">{keyword ? '无匹配会话' : '暂无会话'}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
-          ))
-        )}
-      </nav>
-      {!collapsed ? (
-        <div className="sidebar__foot">
-          <SearchIcon />
-          <span>共 {sessions.length} 个会话</span>
+          );
+        })}
+        {visibleGroups.length === 0 ? <p className="wsgroup__empty">无匹配工作区</p> : null}
+      </div>
+
+      <div className="sidebar__foot">
+        <button type="button" className="sidebar__footrow" onClick={onToggleTheme}>
+          <ThemeIcon />
+          <span>主题</span>
+          <span className="sidebar__footrow-value">{THEME_MODE_LABEL[themeMode]}</span>
+        </button>
+        <button type="button" className="sidebar__footrow" onClick={onOpenSettings}>
+          <GearIcon />
+          <span>设置</span>
+        </button>
+        <div className="sidebar__status" title={serviceLabel}>
+          <span className={`status-dot${serviceRunning ? ' status-dot--on' : ''}`} />
+          <span className="sidebar__status-text">{serviceLabel}</span>
         </div>
-      ) : null}
+      </div>
     </aside>
   );
 }

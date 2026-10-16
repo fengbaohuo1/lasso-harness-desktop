@@ -1,18 +1,22 @@
 /**
- * jnf-desktop 主容器（M7 + F 组）：
+ * jnf-desktop 主容器（M7 + F 组 + P10）：
  *  - 启动链：invoke agent_status -> 未运行则 start_agent -> 轮询 health/status 直到就绪
- *  - 布局：顶栏（状态 + 当前模型 + 主题切换 + 设置）| 左侧会话栏（可折叠）| 主区（对话 + 输入）
+ *  - 布局（P10-2 对齐 dsh 主页面）：左栏（品牌行/新会话/插件/工作区分组树/底部状态）+ 主区
+ *    （会话头 + 对话 + 输入 + 状态栏）；全局顶栏已取消，诊断信息下沉到侧栏底部。
  *  - 对话：消息流 + 输入框 + 发送/停止；流式期间轮询运行期审批（挂起-裁决）与提问（作答）
  *  - F 组：主题三态、Composer 模型选择、会话重命名/删除/搜索/分组、全局快捷键、
  *    toast、欢迎页、重新生成、About、用量徽标
+ *  - P10：工作区在侧栏直接新建/编辑/删除（目录浏览免手打路径）、删除工作区解绑会话
  * 所有业务请求统一走 lib/agent-client 与 lib/console-client、lib/settings-client，
  * 组件内不直接 fetch / invoke。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
+import ChatHeader from './components/ChatHeader';
 import Composer from './components/Composer';
 import type { ComposerModelOption, PermissionMode } from './components/Composer';
+import { PERMISSION_LABEL } from './components/Composer';
 import ConversationView from './components/ConversationView';
 import type { QuickAction } from './components/ConversationView';
 import NewSessionDialog from './components/NewSessionDialog';
@@ -21,7 +25,7 @@ import type { Tab } from './components/SettingsDialog';
 import Sidebar from './components/Sidebar';
 import StatusBar from './components/StatusBar';
 import ToastContainer from './components/ToastContainer';
-import { MonitorIcon, MoonIcon, SunIcon } from './components/icons';
+import WorkspaceDialog from './components/WorkspaceDialog';
 import {
   AgentApiError,
   AgentRunCancelledError,
@@ -35,6 +39,7 @@ import {
 } from './lib/agent-client';
 import { collectSlashItems } from './lib/commands';
 import type { SlashItem } from './lib/commands';
+import { ConfirmHost, confirmAction } from './lib/confirm';
 import {
   answerQuestion,
   compactSession,
@@ -53,9 +58,14 @@ import {
 import { exportTranscriptMarkdown } from './lib/export';
 import { expandMentions } from './lib/mentions';
 import { usePluginUiMap } from './lib/plugin-ui';
-import { fetchWorkspaces, listModelChannels, listProfiles } from './lib/settings-client';
 import {
-  THEME_MODE_LABEL,
+  deleteWorkspace,
+  fetchWorkspaces,
+  listModelChannels,
+  listPlugins,
+  listProfiles,
+} from './lib/settings-client';
+import {
   applyTheme,
   loadThemeMode,
   nextThemeMode,
@@ -81,6 +91,9 @@ import type {
 
 /** 默认会话（与后端 agentId 语义一致）。 */
 const DEFAULT_AGENT_ID = 'main';
+
+/** 默认工作区码（后端 WorkspaceEntry.DEFAULT_CODE）。 */
+const DEFAULT_WORKSPACE_CODE = 'default';
 
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -138,7 +151,6 @@ export default function App(): ReactElement {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [approvals, setApprovals] = useState<RuntimeApprovalDto[]>([]);
   const [questions, setQuestions] = useState<RuntimeQuestionDto[]>([]);
-  const [activeModel, setActiveModel] = useState<string | null>(null);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -155,6 +167,10 @@ export default function App(): ReactElement {
   const [sessionThinking, setSessionThinking] = useState<ReasoningEffort | null>(null);
   const [permission, setPermission] = useState<PermissionMode>('WORKSPACE_WRITE');
   const [showNewSession, setShowNewSession] = useState(false);
+  /** P10-5：工作区对话框（null = 关闭；'new' = 新建；WorkspaceItem = 编辑）。 */
+  const [workspaceTarget, setWorkspaceTarget] = useState<WorkspaceItem | 'new' | null>(null);
+  /** P10-1：侧栏「插件」入口的计数徽标。 */
+  const [pluginCount, setPluginCount] = useState(0);
   const uiMap = usePluginUiMap();
 
   const bootStartedRef = useRef(false);
@@ -229,8 +245,6 @@ export default function App(): ReactElement {
   const refreshModel = useCallback(async () => {
     try {
       const channels = await listModelChannels();
-      const active = channels.find((c) => c.active);
-      setActiveModel(active ? active.modelCode : null);
       const seen = new Set<string>();
       const options: ComposerModelOption[] = [];
       for (const channel of channels) {
@@ -246,7 +260,6 @@ export default function App(): ReactElement {
       }
       setModelOptions(options);
     } catch {
-      setActiveModel(null);
       setModelOptions([]);
     }
   }, []);
@@ -269,6 +282,55 @@ export default function App(): ReactElement {
     }
   }, []);
 
+  /** P10-1：插件计数（侧栏入口徽标；插件装卸都在设置里发生，关闭设置时重取）。 */
+  const refreshPluginCount = useCallback(async () => {
+    try {
+      setPluginCount((await listPlugins()).length);
+    } catch {
+      setPluginCount(0);
+    }
+  }, []);
+
+  /* ----------------------------- P10-5/P10-6：侧栏工作区增删改 ----------------------------- */  /** 工作区新建/编辑落库后：关对话框 + 刷新工作区与会话（会话分组用到工作区码）。 */
+  const handleWorkspaceSaved = useCallback(() => {
+    setWorkspaceTarget(null);
+    void refreshWorkspaces();
+    void refreshSessions();
+  }, [refreshWorkspaces, refreshSessions]);
+
+  /** 删除工作区：后端会解绑其下会话（P10-6），成功后刷新并清理选中项。 */
+  const handleDeleteWorkspace = useCallback(
+    async (workspace: WorkspaceItem): Promise<void> => {
+      if (workspace.workspaceCode === DEFAULT_WORKSPACE_CODE) {
+        toast('默认工作区不可删除');
+        return;
+      }
+      const confirmed = await confirmAction({
+        title: '删除工作区',
+        message: `确认删除工作区「${workspace.displayName}」？\n其下会话会回到默认工作区（不会删除会话）。`,
+        confirmLabel: '删除',
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+      try {
+        const result = await deleteWorkspace(workspace.workspaceCode);
+        toast(
+          result.unboundSessions > 0
+            ? `工作区「${workspace.displayName}」已删除，${result.unboundSessions} 个会话回到默认工作区`
+            : `工作区「${workspace.displayName}」已删除`,
+        );
+        setSelectedWorkspace((prev) => (prev === workspace.workspaceCode ? null : prev));
+        await refreshWorkspaces();
+        await refreshSessions();
+      } catch (err) {
+        toast(describeError(err));
+      }
+    },
+    [refreshWorkspaces, refreshSessions],
+  );
+
   /** C1：命令面板数据（内置 + 插件 slashCommands；function tools 不进命令面） */
 
   useEffect(() => {
@@ -279,8 +341,9 @@ export default function App(): ReactElement {
     void refreshModel();
     void refreshProfiles();
     void refreshWorkspaces();
+    void refreshPluginCount();
     void refreshUsage(agentId);
-  }, [boot.phase, refreshSessions, refreshModel, refreshProfiles, refreshWorkspaces, refreshUsage, agentId]);
+  }, [boot.phase, refreshSessions, refreshModel, refreshProfiles, refreshWorkspaces, refreshPluginCount, refreshUsage, agentId]);
 
   // F3：30s 轻量轮询兜底（done 后另有主动刷新）
   useEffect(() => {
@@ -756,6 +819,12 @@ export default function App(): ReactElement {
         return;
       }
       if (e.key === 'Escape') {
+        // P10-5：工作区对话框浮在设置之上，Esc 先关它（宿主组件自己不处理 Esc）
+        if (workspaceTarget) {
+          e.preventDefault();
+          setWorkspaceTarget(null);
+          return;
+        }
         if (showSettings) {
           e.preventDefault();
           setShowSettings(false);
@@ -770,7 +839,7 @@ export default function App(): ReactElement {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showSettings, streaming, handleNewSession, handleStop]);
+  }, [showSettings, workspaceTarget, streaming, handleNewSession, handleStop]);
 
   /* ----------------------------- 渲染 ----------------------------- */
 
@@ -798,52 +867,30 @@ export default function App(): ReactElement {
     ? profileDetails.find((p) => p.profileCode === sessionPresetCode)?.displayName ?? sessionPresetCode
     : null;
 
+  /* ----------------------------- P10-2：会话头数据 ----------------------------- */
+
+  const activeSession = sessions.find((session) => session.sessionId === agentId) ?? null;
+  const headerTitle = activeSession?.title?.trim() || (messages.length > 0 ? '未命名会话' : '新会话');
+  const activeWorkspaceCode = selectedWorkspace ?? DEFAULT_WORKSPACE_CODE;
+  const workspaceLabel =
+    workspaces.find((workspace) => workspace.workspaceCode === activeWorkspaceCode)?.displayName ?? null;
+  const permissionLabel = PERMISSION_LABEL[permission] ?? null;
+  const serviceLabel = bootReady
+    ? `服务运行中${agentStatus ? ` · :${agentStatus.port}` : ''}`
+    : bootLabel[boot.phase];
+
+  /** 侧栏「插件」入口：直接落到设置对话框的插件页签。 */
+  const openPlugins = useCallback(() => {
+    setSettingsTab('plugins');
+    setShowSettings(true);
+  }, []);
+
+  const openSettings = useCallback(() => {
+    setShowSettings(true);
+  }, []);
+
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <div className="app-title">
-          <span className="app-logo">◆</span>
-          <span>jnf Desktop</span>
-          <span className="app-subtitle">自有 Agent Harness 桌面壳</span>
-        </div>
-        <div className="app-status">
-          <span className={`status-dot status-dot--${boot.phase}`} />
-          <span>{bootLabel[boot.phase]}</span>
-          {agentStatus ? (
-            <span className="status-detail">
-              :{agentStatus.port}
-              {typeof agentStatus.pid === 'number' ? ` · pid ${agentStatus.pid}` : ''}
-            </span>
-          ) : null}
-          {bootReady && activeModel ? (
-            <span className="model-badge" title="当前生效模型（设置中可切换）">
-              {activeModel}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            className="icon-btn theme-toggle"
-            title={`主题：${THEME_MODE_LABEL[themeMode]}（点击切换）`}
-            aria-label={`主题：${THEME_MODE_LABEL[themeMode]}（点击切换）`}
-            onClick={handleToggleTheme}
-          >
-            {themeMode === 'system' ? (
-              <MonitorIcon />
-            ) : themeMode === 'dark' ? (
-              <MoonIcon />
-            ) : (
-              <SunIcon />
-            )}
-            <span>{THEME_MODE_LABEL[themeMode]}</span>
-          </button>
-          {bootReady ? (
-            <button type="button" className="btn btn--small" onClick={() => setShowSettings(true)}>
-              设置
-            </button>
-          ) : null}
-        </div>
-      </header>
-
       {showSettings && bootReady ? (
         <SettingsDialog
           initialTab={settingsTab}
@@ -853,7 +900,16 @@ export default function App(): ReactElement {
             void refreshModel();
             void refreshProfiles();
             void refreshSessions();
+            void refreshPluginCount();
           }}
+        />
+      ) : null}
+
+      {workspaceTarget ? (
+        <WorkspaceDialog
+          target={workspaceTarget === 'new' ? null : workspaceTarget}
+          onClose={() => setWorkspaceTarget(null)}
+          onSaved={handleWorkspaceSaved}
         />
       ) : null}
 
@@ -868,7 +924,8 @@ export default function App(): ReactElement {
 
       {!bootReady ? (
         <section className="boot-panel">
-          <h2>启动链</h2>
+          <span className="boot-panel__logo">◆</span>
+          <h2>jnf Harness</h2>
           <p>{bootLabel[boot.phase]}</p>
           {boot.phase === 'starting' || boot.phase === 'checking' ? (
             <div className="boot-spinner" aria-label="loading" />
@@ -884,15 +941,37 @@ export default function App(): ReactElement {
         <div className="app-body">
           <Sidebar
             sessions={sessions}
+            workspaces={workspaces}
             activeId={agentId}
             collapsed={sidebarCollapsed}
+            themeMode={themeMode}
+            serviceLabel={serviceLabel}
+            serviceRunning={bootReady}
+            pluginCount={pluginCount}
             onSelect={handleSelectSession}
             onNew={handleNewSession}
             onRename={handleRenameSession}
             onDelete={handleDeleteSession}
             onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+            onOpenPlugins={openPlugins}
+            onOpenSettings={openSettings}
+            onToggleTheme={handleToggleTheme}
+            onNewWorkspace={() => setWorkspaceTarget('new')}
+            onEditWorkspace={(workspace) => setWorkspaceTarget(workspace)}
+            onDeleteWorkspace={(workspace) => void handleDeleteWorkspace(workspace)}
           />
           <main className="app-main">
+            <ChatHeader
+              title={headerTitle}
+              workspaceLabel={workspaceLabel}
+              presetLabel={profileLabel}
+              permissionLabel={permissionLabel}
+              streaming={streaming}
+              sidebarCollapsed={sidebarCollapsed}
+              onExpandSidebar={() => setSidebarCollapsed(false)}
+              onNewSession={handleNewSession}
+              onOpenSettings={openSettings}
+            />
             <ConversationView
               messages={messages}
               streaming={streaming}
@@ -935,17 +1014,12 @@ export default function App(): ReactElement {
               onSend={handleSend}
               onStop={handleStop}
             />
-            <StatusBar
-              usage={usage}
-              contextBudget={contextBudget}
-              modelLabel={activeModel}
-              profileLabel={profileLabel}
-              streaming={streaming}
-            />
+            <StatusBar usage={usage} contextBudget={contextBudget} streaming={streaming} />
           </main>
         </div>
       )}
       <ToastContainer />
+      <ConfirmHost />
     </div>
   );
 }

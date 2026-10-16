@@ -7,6 +7,7 @@
 
 import { useState } from 'react';
 import type { ReactElement } from 'react';
+import { confirmAction } from '../lib/confirm';
 import { toast } from '../lib/toast';
 import {
   evalPath,
@@ -50,9 +51,17 @@ function ActionButtons({
   if (items.length === 0) {
     return null;
   }
-  const run = (action: PluginUiAction): void => {
-    if (action.confirm && !window.confirm(action.confirm)) {
-      return;
+  const run = async (action: PluginUiAction): Promise<void> => {
+    if (action.confirm) {
+      const confirmed = await confirmAction({
+        title: action.label,
+        message: action.confirm,
+        confirmLabel: '执行',
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
     }
     setBusy(action.label);
     executePluginAction(pluginId, action, resolveActionBody(action, ctx))
@@ -71,7 +80,7 @@ function ActionButtons({
           type="button"
           className="btn btn--small"
           disabled={busy !== null}
-          onClick={() => run(action)}
+          onClick={() => void run(action)}
         >
           {busy === action.label ? '执行中…' : action.label}
         </button>
@@ -147,24 +156,26 @@ function Block({
       return (
         <div className="tool-block">
           {label}
-          <table className="tool-block__table">
-            <thead>
-              <tr>
-                {columns.map((col) => (
-                  <th key={col.key}>{col.label || col.key}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, index) => (
-                <tr key={index}>
+          <div className="tool-block__table-wrap">
+            <table className="tool-block__table">
+              <thead>
+                <tr>
                   {columns.map((col) => (
-                    <td key={col.key}>{displayText(evalPath(row, col.key))}</td>
+                    <th key={col.key}>{col.label || col.key}</th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => (
+                  <tr key={index}>
+                    {columns.map((col) => (
+                      <td key={col.key}>{displayText(evalPath(row, col.key))}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       );
     }

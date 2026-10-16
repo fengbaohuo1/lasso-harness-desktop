@@ -115,45 +115,64 @@ export default function ToolCatalogPanel(): ReactElement {
       <p className="settings-panel__hint">
         勾选 = 允许该工具画像下的智能体使用此工具；模型可见工具面按此白名单现算（token 开销可控）。
       </p>
-      <table className="settings-table">
-        <thead>
-          <tr>
-            <th>启用</th>
-            <th>工具</th>
-            <th>名称</th>
-            <th>描述</th>
-            <th>分类</th>
-            <th>审批</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((tool) => (
-            <tr key={tool.toolCode}>
-              <td>
-                <input
-                  type="checkbox"
-                  checked={bound.has(tool.toolCode)}
-                  aria-label={`绑定 ${tool.toolCode}`}
-                  onChange={() => toggle(tool.toolCode)}
-                />
-              </td>
-              <td className="settings-table__path">{tool.toolCode}</td>
-              <td>{tool.displayName || '—'}</td>
-              <td className="settings-table__desc" title={tool.description || ''}>
-                <span className="clamp-2">{tool.description || '—'}</span>
-              </td>
-              <td>{tool.category || '—'}</td>
-              <td>
-                {tool.requiresApproval ? (
-                  <span className="badge badge--warn">需审批</span>
-                ) : (
-                  '—'
-                )}
-              </td>
+      <div className="settings-table-wrap settings-table-wrap--tools">
+        <table className="settings-table">
+          <colgroup>
+            <col style={{ width: '6%' }} />
+            <col style={{ width: '22%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '30%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '16%' }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>启用</th>
+              <th>工具</th>
+              <th>名称</th>
+              <th>描述</th>
+              <th>分类</th>
+              <th>审批</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {sorted.map((tool) => (
+              <tr key={tool.toolCode}>
+                <td className="settings-table__center">
+                  <input
+                    type="checkbox"
+                    checked={bound.has(tool.toolCode)}
+                    aria-label={`绑定 ${tool.toolCode}`}
+                    onChange={() => toggle(tool.toolCode)}
+                  />
+                </td>
+                <td className="settings-table__mono" title={tool.toolCode}>
+                  {tool.toolCode}
+                </td>
+                <td>{tool.displayName || '—'}</td>
+                <td className="settings-table__desc" title={tool.description || ''}>
+                  {tool.description || '—'}
+                </td>
+                <td>{tool.category || '—'}</td>
+                <td>
+                  {tool.requiresApproval ? (
+                    <span className="badge badge--warn">需审批</span>
+                  ) : (
+                    <span className="settings-table__muted">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {sorted.length === 0 ? (
+              <tr>
+                <td className="settings-empty" colSpan={6}>
+                  暂无工具注册信息。
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

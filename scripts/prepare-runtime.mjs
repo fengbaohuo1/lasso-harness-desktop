@@ -10,7 +10,7 @@
  *   JNF_JRE_TARGET   目标平台，默认当前平台，形如 win32-x64 / darwin-arm64 / linux-x64
  */
 import { execFileSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { cpSync, createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -68,7 +68,18 @@ if (!runtimeHome) {
 
 rmSync(outputRoot, { recursive: true, force: true });
 mkdirSync(dirname(outputRoot), { recursive: true });
-renameSync(join(unpacked, runtimeHome), outputRoot);
+const stagedHome = join(unpacked, runtimeHome);
+try {
+  renameSync(stagedHome, outputRoot);
+} catch (error) {
+  // 系统临时目录与工程目录常不在同一磁盘（C:\Temp → D:\repo），rename 会抛 EXDEV
+  // 并在删掉旧 runtime 之后失败——退回递归拷贝，避免「runtime 目录被清空」的半成品状态。
+  if (error?.code !== "EXDEV") {
+    throw error;
+  }
+  console.warn(`[agent:runtime] 临时目录与工程目录不同盘（${error.code}），改用递归拷贝`);
+  cpSync(stagedHome, outputRoot, { recursive: true });
+}
 rmSync(temporaryRoot, { recursive: true, force: true });
 
 const javaBinary = join(outputRoot, "bin", process.platform === "win32" ? "java.exe" : "java");
