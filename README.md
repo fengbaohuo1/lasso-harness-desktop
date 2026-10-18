@@ -1,6 +1,8 @@
-# jnf-desktop
+# lasso-harness-desktop
 
-`jnf-desktop` 是 `jnf-harness`（Agent Runtime 服务端）的桌面壳：**TypeScript + React 19** 构建界面，**Tauri 2** 负责窗口、进程与本机能力；智能体能力不重复实现——桌面壳启动 `jnf-harness-app.jar`（Spring Boot 3.3 · DDD 六边形），前端**只经 `127.0.0.1` HTTP/SSE** 调用后端接口。
+`lasso-harness-desktop` 是 `lasso-harness`（Agent Runtime 服务端）的桌面壳：**TypeScript + React 19** 构建界面，**Tauri 2** 负责窗口、进程与本机能力；智能体能力不重复实现——桌面壳启动 `jnf-harness-app.jar`（Spring Boot 3.3 · DDD 六边形），前端**只经 `127.0.0.1` HTTP/SSE** 调用后端接口。
+
+> **命名说明**：仓库对外名称为 `lasso-harness-desktop`；构建产物（`jnf-harness-app.jar`）、npm 包名、环境变量（`JNF_*`）与示例目录沿用 `jnf-*` 命名，与源码一致。
 
 核心设计决策：**桌面端只做壳，能力由内嵌服务承载**。
 
@@ -10,13 +12,14 @@
 4. **本机回环通信**：UI 只访问 `127.0.0.1`，capability 只放行 `http://127.0.0.1:*`；
 5. **Java 三级选择**：`JNF_AGENT_JAVA` → 应用内置 Java 17 Runtime → 系统 `java`（要求 ≥ 17），无需用户改 `JAVA_HOME`/`PATH`。
 
-> 施工计划与验收标准见 [`../plan/第二阶段-桌面壳.md`](../plan/第二阶段-桌面壳.md)。
-> **联调依赖第一阶段后端可运行**（REST/SSE 接入层 + standalone profile）。
+> 配套服务端仓库：[lasso-harness](https://github.com/fengbaohuo1/lasso-harness)。
+> 本地联调时两仓库同级放置；构建脚本按同级目录名 `jnf-harness` 定位服务端源码（克隆后可将目录命名为 `jnf-harness`，或自行调整 `package.json` 中的相对路径）。
+> **联调依赖服务端可运行**（REST/SSE 接入层 + standalone profile）。
 
 ## 目录结构
 
 ```text
-jnf-desktop/
+lasso-harness-desktop/
 ├── index.html                 # 壳入口（含启动错误浮层）
 ├── package.json               # 构建脚本（见下）
 ├── vite.config.ts             # Vite（端口 1420 strictPort）
@@ -31,7 +34,7 @@ jnf-desktop/
 └── dist/                      # 前端构建产物（不入 Git）
 ```
 
-配套服务端工程：[`../jnf-harness`](../jnf-harness)（与本项目同级）。**服务端改动后必须重新 `npm run agent:build && npm run agent:copy`**，壳才会用上新服务端。
+配套服务端工程：[lasso-harness](https://github.com/fengbaohuo1/lasso-harness)（本地开发时与本项目同级，目录名 `jnf-harness`）。**服务端改动后必须重新 `npm run agent:build && npm run agent:copy`**，壳才会用上新服务端。
 
 ## 构建与运行
 
@@ -123,7 +126,7 @@ start_agent
 
 ## 与参照实现（dsh-java-desktop）的关系
 
-壳职责对齐参照实现（进程托管/端口/密钥/清理/持久化/日志/打包），代码自写、命名一律 jnf。有意偏离：
+壳职责对齐参照实现（进程托管/端口/密钥/清理/持久化/日志/打包），代码自写、内部命名沿用 jnf。有意偏离：
 
 | 点 | 参照实现 | 本实现 |
 | --- | --- | --- |
