@@ -153,6 +153,16 @@ export function PluginIcon(): ReactElement {
   );
 }
 
+/** 技能（SKILL.md 文档 + 折角）。 */
+export function SkillIcon(): ReactElement {
+  return svg(
+    <>
+      <path d="M3.2 2.4h6.2l3.4 3.4v7.8H3.2V2.4z" />
+      <path d="M9.4 2.4v3.4h3.4M5.6 8.2h4.8M5.6 10.6h3.2" />
+    </>,
+  );
+}
+
 /** 工作区（文件夹）。 */
 export function WorkspaceIcon(): ReactElement {
   return svg(<path d="M2 4.2h4.2l1.4 1.8h6.4v7.2H2V4.2zM2 7.4h12" />);

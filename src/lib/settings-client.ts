@@ -332,3 +332,79 @@ export function resolveWorkspace(sessionId: string): Promise<WorkspaceResolve> {
     `/api/harness/workspaces/resolve?sessionId=${encodeURIComponent(sessionId)}`,
   );
 }
+
+/* ----------------------------- 技能（SKILL.md 运行时） ----------------------------- */
+
+/**
+ * 技能来源：优先级 PROJECT > CUSTOM > USER > BUNDLED，
+ * 同名技能由高优先级来源覆盖。
+ */
+export type SkillSource = 'PROJECT' | 'CUSTOM' | 'USER' | 'BUNDLED';
+
+/** 技能摘要（GET /api/harness/skills）。 */
+export interface SkillItem {
+  name: string;
+  description: string;
+  /** 触发时机（模型据此判断何时载入技能，可为空串）。 */
+  whenToUse: string;
+  source: SkillSource;
+  /** SKILL.md 所在路径（展示用，过长折叠）。 */
+  path: string;
+  enabled: boolean;
+}
+
+/** 技能详情：摘要 + SKILL.md 正文（已剥掉 YAML frontmatter）。 */
+export interface SkillDetail extends SkillItem {
+  content: string;
+}
+
+/** 安装入参：Git URL 与本地 zip 二选一；subdir/name 为可选覆盖。 */
+export interface SkillInstallInput {
+  gitUrl?: string;
+  /** 仅本地安装用（桌面端 UI 未暴露）。 */
+  zipPath?: string;
+  /** 仓库内技能子目录（技能不在仓库根时指定）。 */
+  subdir?: string;
+  /** 安装后的技能名（缺省取 SKILL.md frontmatter 的 name）。 */
+  name?: string;
+}
+
+/**
+ * 安装结果：成功时结构化返回，message 直接展示给用户；
+ * 安装失败后端回 40000（info 为失败原因），由 apiRequest 抛错，调用方按异常展示。
+ */
+export interface SkillInstallResult {
+  success: boolean;
+  name: string;
+  path: string;
+  message: string;
+}
+
+export function listSkills(): Promise<SkillItem[]> {
+  return apiRequest<SkillItem[]>('/api/harness/skills');
+}
+
+export function getSkill(name: string): Promise<SkillDetail> {
+  return apiRequest<SkillDetail>(`/api/harness/skills/${encodeURIComponent(name)}`);
+}
+
+export function installSkill(input: SkillInstallInput): Promise<SkillInstallResult> {
+  return apiRequest<SkillInstallResult>('/api/harness/skills/install', 'POST', input);
+}
+
+/**
+ * 启用/禁用技能（两个端点合一）：
+ * 返回更新后的技能摘要；未知技能后端回 40000，错误信息经 toast 呈现。
+ */
+export function setSkillEnabled(name: string, enabled: boolean): Promise<SkillItem> {
+  const action = enabled ? 'enable' : 'disable';
+  return apiRequest<SkillItem>(
+    `/api/harness/skills/${encodeURIComponent(name)}/${action}`,
+    'POST',
+  );
+}
+
+/** 删除技能；仅用户级安装可删（项目级/内置技能后端回 40000）。 */
+export function removeSkill(name: string): Promise<void> {
+  return apiRequest<void>(`/api/harness/skills/${encodeURIComponent(name)}`, 'DELETE');
+}

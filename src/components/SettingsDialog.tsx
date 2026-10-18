@@ -1,6 +1,6 @@
 /**
  * 设置对话框（SD6 + F4 + A4 + P8-2 + P9-5）：纵向导航（分组图标 + 文字）+ 内容区白卡。
- * - 分组：AI 能力（模型渠道/智能体预设/工具注册）· 扩展（插件管理，带计数徽标）· 系统（工作区/关于）；
+ * - 分组：AI 能力（模型渠道/智能体预设/工具注册）· 扩展（插件管理，带计数徽标 / 技能）· 系统（工作区/关于）；
  * - 导航底部固定：绿点（带光环）+ 服务状态；
  * - 保留 initialTab 直达（欢迎页快捷入口）；Esc 关闭由 App 全局键位处理。
  */
@@ -11,6 +11,7 @@ import AboutPanel from './AboutPanel';
 import ModelSettingsPanel from './ModelSettingsPanel';
 import PluginSettingsPanel from './PluginSettingsPanel';
 import ProfileSettingsPanel from './ProfileSettingsPanel';
+import SkillsPanel from './SkillsPanel';
 import ToolCatalogPanel from './ToolCatalogPanel';
 import WorkspacePanel from './WorkspacePanel';
 import {
@@ -20,6 +21,7 @@ import {
   ModelIcon,
   PluginIcon,
   PresetIcon,
+  SkillIcon,
   ToolsIcon,
   WorkspaceIcon,
 } from './icons';
@@ -33,7 +35,14 @@ export interface SettingsDialogProps {
   serviceRunning?: boolean;
 }
 
-export type Tab = 'models' | 'profiles' | 'tools' | 'plugins' | 'workspaces' | 'about';
+export type Tab =
+  | 'models'
+  | 'profiles'
+  | 'tools'
+  | 'plugins'
+  | 'skills'
+  | 'workspaces'
+  | 'about';
 
 interface NavItem {
   key: Tab;
@@ -57,7 +66,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: '扩展',
-    items: [{ key: 'plugins', label: '插件管理', icon: <PluginIcon /> }],
+    items: [
+      { key: 'plugins', label: '插件管理', icon: <PluginIcon /> },
+      { key: 'skills', label: '技能', icon: <SkillIcon /> },
+    ],
   },
   {
     title: '系统',
@@ -73,6 +85,7 @@ const PAGE_TITLES: Record<Tab, string> = {
   profiles: '智能体预设',
   tools: '工具注册',
   plugins: '插件管理',
+  skills: '技能',
   workspaces: '工作区',
   about: '关于',
 };
@@ -146,6 +159,7 @@ export default function SettingsDialog({
                 {tab === 'profiles' ? <ProfileSettingsPanel /> : null}
                 {tab === 'tools' ? <ToolCatalogPanel /> : null}
                 {tab === 'plugins' ? <PluginSettingsPanel /> : null}
+                {tab === 'skills' ? <SkillsPanel /> : null}
                 {tab === 'workspaces' ? <WorkspacePanel /> : null}
                 {tab === 'about' ? <AboutPanel /> : null}
               </div>
