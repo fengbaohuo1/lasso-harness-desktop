@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const sourceJar = join(projectRoot, "..", "jnf-harness", "jnf-harness-app", "target", "jnf-harness-app.jar");
 const sourcePlugins = join(projectRoot, "..", "jnf-harness", "jnf-harness-app", "target", "plugins");
-const sourceSampleJar = join(projectRoot, "..", "jnf-harness", "jnf-harness-sample-plugin", "target");
+const sourceSampleJar = join(projectRoot, "..", "jnf-harness", "plugins", "sample", "target");
 const targetJar = join(projectRoot, "resources", "agent", "jnf-harness-app.jar");
 const targetPlugins = join(projectRoot, "resources", "agent", "plugins");
 const MIN_JAR_BYTES = 1024 * 1024; // 真实 Spring Boot fat jar 至少兆级
